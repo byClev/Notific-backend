@@ -1,5 +1,5 @@
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import db
 
@@ -9,6 +9,11 @@ class RoleEnum(Enum):
     MODERADOR = 'MODERADOR'
     USUARIO= 'USUARIO'
 
+class NotificationPreferenceEnum(Enum):
+    EVENTO = 'EVENTO'
+    OPORTUNIDADE = 'OPORTUNIDADE'
+    PROJETO = 'PROJETO'
+    TODOS = 'TODOS'
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -18,8 +23,10 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.Enum(RoleEnum, name='role_enum'), nullable=False, default=RoleEnum.USUARIO)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    notification_preferences = db.Column(db.ARRAY(db.Enum(NotificationPreferenceEnum, name='notification_preference_enum')), nullable=True)
+    profile_picture = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -39,6 +46,7 @@ class User(db.Model):
             'username': self.username,
             'email': self.email,
             'role': self.role.value if self.role else None,
+            'notification_preferences': [pref.value for pref in self.notification_preferences] if self.notification_preferences else [],
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
