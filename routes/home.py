@@ -1,3 +1,5 @@
+# routes/home.py
+
 from flask import Blueprint, request, jsonify
 from routes.decorators import token_required
 

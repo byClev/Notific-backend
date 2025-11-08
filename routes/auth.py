@@ -1,3 +1,5 @@
+# routes/auth.py
+
 import jwt
 from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime, timedelta, timezone

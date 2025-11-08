@@ -1,3 +1,5 @@
+# models/notificationModel.py
+
 from datetime import datetime, timezone
 from app import db
 

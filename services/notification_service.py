@@ -1,3 +1,5 @@
+# services/notification_service.py
+
 from models.userModel import User, NotificationPreferenceEnum
 from models.newsModel import News, TagEnum
 from models.notificationModel import Notification, UserNotification

@@ -1,3 +1,5 @@
+# models/newsModel.py
+
 from enum import Enum
 from datetime import datetime, timezone
 from app import db

@@ -1,3 +1,5 @@
+# models/userModel.py
+
 from enum import Enum
 from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
