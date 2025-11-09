@@ -68,6 +68,21 @@ def recuperar_senha():
     mail.send(msg)
     return jsonify({'message': 'E-mail de recuperação enviado'}), 200
 
+@auth_routes.route('/redefinir-senha', methods=['GET'])
+def redefinir_senha():
+    token = request.args.get('token')
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload['user_id'])
+        if not user:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        # Aqui você pode retornar um status para o frontend renderizar o formulário
+        return jsonify({'message': 'Token válido, pode redefinir a senha.'}), 200
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 400
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 400
+
 @auth_routes.route('/redefinir-senha', methods=['POST'])
 def redefinir_senha():
     data = request.get_json()
