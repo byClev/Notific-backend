@@ -12,9 +12,9 @@ auth_routes = Blueprint('auth_routes', __name__)
 
 #renderização das páginas de autenticação
 
-@auth_routes.route('/login-page')
+@auth_routes.route('/login')
 def login_page():
-    return render_template('login.html')  # Flask vai buscar em src/html/
+    return render_template('login.html')
 
 @auth_routes.route('/registrar-page')
 def registrar_page():
