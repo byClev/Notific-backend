@@ -16,11 +16,11 @@ auth_routes = Blueprint('auth_routes', __name__)
 def login_page():
     return render_template('login.html')
 
-@auth_routes.route('/registrar-page')
+@auth_routes.route('/registrar')
 def registrar_page():
     return render_template('registrar.html')
 
-@auth_routes.route('/recuperacao-senha-page')
+@auth_routes.route('/recuperacao')
 def recuperacao_senha_page():
     return render_template('recuperacaoSenha.html')
 
