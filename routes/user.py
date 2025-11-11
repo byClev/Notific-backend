@@ -41,6 +41,22 @@ def obter_usuario(user_id):
         return jsonify({'error': 'Usuário não encontrado'}), 404
     return jsonify(user.to_dict()), 200
 
+
+# Rota para obter informações do próprio usuário a partir do token
+# Protegida pelo decorator token_required que popula `request.user`
+@user_routes.route('/me', methods=['GET'])
+@token_required
+def me():
+    """Retorna informações do usuário autenticado.
+
+    Usa o decorator `token_required` que valida o token JWT e anexa
+    o objeto usuário em `request.user`.
+    """
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'error': 'Usuário não encontrado'}), 404
+    return jsonify(user.to_dict()), 200
+
 # UPDATE
 @user_routes.route('/user/<int:user_id>', methods=['PUT'])
 @token_required

@@ -27,8 +27,9 @@ class User(db.Model):
     role = db.Column(db.Enum(RoleEnum, name='role_enum'), nullable=False, default=RoleEnum.USUARIO)
     notification_preferences = db.Column(db.ARRAY(db.Enum(NotificationPreferenceEnum, name='notification_preference_enum')), nullable=True)
     profile_picture = db.Column(db.String(200), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    # Use callables for defaults so timestamps are evaluated at insert/update time
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -40,7 +41,8 @@ class User(db.Model):
         return self.role == RoleEnum.ADMIN
 
     def is_moderator(self) -> bool:
-        return self.role == RoleEnum.MODERATOR
+        # Enum member is defined as MODERADOR
+        return self.role == RoleEnum.MODERADOR
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +51,7 @@ class User(db.Model):
             'email': self.email,
             'role': self.role.value if self.role else None,
             'notification_preferences': [pref.value for pref in self.notification_preferences] if self.notification_preferences else [],
+            'profile_picture': self.profile_picture,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
