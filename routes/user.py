@@ -117,21 +117,77 @@ def toggle_favorite():
         if not user:
             return jsonify({'error': 'Usuário não encontrado'}), 404
         data = request.get_json() or {}
+        # log minimal info to console for debugging (database URL, user and payload summary)
+        try:
+            current_app.logger.info(f"[favorites] DB={current_app.config.get('SQLALCHEMY_DATABASE_URI')} user_id={user.id} payload_keys={list(data.keys())}")
+        except Exception:
+            # fallback to print if logger misconfigured
+            print(f"[favorites] user_id={getattr(user,'id',None)} payload_keys={list(data.keys())}")
+        # accept either { news_id } or full news payload { id, title, content, ... }
         news_id = data.get('news_id')
-        if not news_id:
-            return jsonify({'error': 'news_id é necessário'}), 400
-        news = News.query.get(int(news_id))
-        if not news:
-            return jsonify({'error': 'Notícia não encontrada'}), 404
 
+        news = None
+        if news_id:
+            news = News.query.get(int(news_id))
+
+        # If news not found, try to create from payload (fallback for static JSON items)
+        if not news:
+            # require at least a title or id in payload
+            title = data.get('title')
+            if not title and not news_id:
+                return jsonify({'error': 'news_id ou título da notícia necessários'}), 400
+
+            try:
+                # If the client provided an external id, try to use it as the DB id so client-side ids match
+                external_id = data.get('id')
+                if external_id:
+                    # ensure there's no existing news with that id
+                    existing = News.query.get(int(external_id))
+                    if existing:
+                        news = existing
+                    else:
+                        news = News(
+                            id=int(external_id),
+                            title=title or f'Notícia {external_id}',
+                            content=data.get('content') or data.get('desc') or '',
+                            author_id=user.id,
+                            link=data.get('link')
+                        )
+                        db.session.add(news)
+                        db.session.commit()
+                        # update sequence for Postgres serial to avoid future conflicts
+                        try:
+                            db.session.execute("SELECT setval(pg_get_serial_sequence('news','id'), (SELECT COALESCE(MAX(id), 1) FROM news));")
+                            db.session.commit()
+                        except Exception:
+                            db.session.rollback()
+                else:
+                    news = News(
+                        title=title or f'Notícia {news_id or "tmp"}',
+                        content=data.get('content') or data.get('desc') or '',
+                        author_id=user.id,
+                        link=data.get('link')
+                    )
+                    db.session.add(news)
+                    db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({'error': 'Falha ao criar notícia temporária', 'detail': str(e)}), 500
+
+        # toggle favorite
         if news in user.favorite_news:
             user.favorite_news.remove(news)
             db.session.commit()
-            return jsonify({'message': 'Removido dos favoritos', 'news_id': news.id}), 200
+            # return updated favorites for client verification
+            favs = [n.id for n in user.favorite_news]
+            current_app.logger.info(f"Removed favorite: user={user.id} news={news.id} favorites={favs}")
+            return jsonify({'message': 'Removido dos favoritos', 'news_id': news.id, 'favorites': favs}), 200
         else:
             user.favorite_news.append(news)
             db.session.commit()
-            return jsonify({'message': 'Adicionado aos favoritos', 'news_id': news.id}), 201
+            favs = [n.id for n in user.favorite_news]
+            current_app.logger.info(f"Added favorite: user={user.id} news={news.id} favorites={favs}")
+            return jsonify({'message': 'Adicionado aos favoritos', 'news_id': news.id, 'favorites': favs}), 201
     except jwt.ExpiredSignatureError:
         return jsonify({'error': 'Token expirado'}), 401
     except jwt.InvalidTokenError:
