@@ -6,7 +6,7 @@ from models.userModel import User
 from app import db
 from models.newsModel import News, StatusEnum, TagEnum
 from routes.decorators import token_required, role_required
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import os
 
@@ -383,6 +383,21 @@ def news_page():
     else:
         status = StatusEnum.PENDENTE
         active = False
+
+    # Rate limit: users with role USUARIO can only submit once every 5 minutes
+    try:
+        if user.role.value == 'USUARIO':
+            five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+            last = News.query.filter(News.author_id == user.id).order_by(News.created_at.desc()).first()
+            if last and last.created_at and last.created_at > five_minutes_ago:
+                # calcula tempo restante em segundos
+                remaining = (last.created_at + timedelta(minutes=5) - datetime.now(timezone.utc)).total_seconds()
+                minutes = int(remaining // 60)
+                seconds = int(remaining % 60)
+                return jsonify({'error': f'Você só pode submeter uma notícia a cada 5 minutos. Tente novamente em {minutes}m{seconds}s.'}), 429
+    except Exception:
+        # Não falhar a submissão por erro na verificação de rate-limit; apenas logar e continuar
+        current_app.logger.exception('Erro ao verificar rate limit de submissão de notícia')
 
     news = News(title=title, content=content, author_id=user.id, status=status, link=link)
     if start_date:
