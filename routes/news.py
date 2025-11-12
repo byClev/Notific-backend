@@ -7,6 +7,8 @@ from app import db
 from models.newsModel import News, StatusEnum, TagEnum
 from routes.decorators import token_required, role_required
 from datetime import datetime, timezone
+import json
+import os
 
 news_routes = Blueprint('news_routes', __name__)
 
@@ -34,8 +36,8 @@ def parse_tags(tags_raw):
 
 
 def parse_datetime(dt_raw):
-    """Parse an ISO datetime string or timestamp into a datetime object.
-    Returns None if dt_raw is falsy. Raises ValueError if provided but invalid.
+    """Analisa uma string ISO de data/hora ou timestamp para um objeto datetime.
+    Retorna None se dt_raw for falso. Lança ValueError se fornecido mas inválido.
     """
     if not dt_raw:
         return None
@@ -69,14 +71,14 @@ def create_news():
     end_raw = data.get('end_date')
     link = data.get('link')
     
-    # Validate link
+    # Validar link
     if link is not None:
         if not isinstance(link, str):
             return jsonify({'error': 'link deve ser uma string'}), 400
         link = link.strip()
         if len(link) > 200:
             return jsonify({'error': 'link deve ter no máximo 200 caracteres'}), 400
-        # Optional: basic URL format check
+    # Opcional: verificação básica de formato de URL
         import re
         url_regex = r'^(https?://|www\.)[\w\-]+(\.[\w\-]+)+[/#?]?.*$'
         if link and not re.match(url_regex, link, re.IGNORECASE):
@@ -87,7 +89,7 @@ def create_news():
 
     tags = parse_tags(tags_raw)
 
-    # If admin, publish directly
+    # Se for admin, publica diretamente
     user = getattr(request, 'user', None)
     if user and user.role.value == 'ADMIN':
         status = StatusEnum.ACEITA
@@ -96,7 +98,7 @@ def create_news():
         status = StatusEnum.PENDENTE
         active = False
 
-    # parse dates if provided
+    # analisa as datas se fornecidas
     try:
         start_date = parse_datetime(start_raw)
     except ValueError:
@@ -171,6 +173,26 @@ def list_news():
     per_page = int(request.args.get('per_page', 10))
     pagination = q.order_by(News.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     items = [n.to_dict() for n in pagination.items]
+    # Tenta enriquecer os itens com imagens do JSON estático, se presentes
+    # (sem alteração no esquema do BD)
+    try:
+        static_path = os.path.join(current_app.static_folder, 'json', 'noticias.json')
+        if os.path.exists(static_path):
+            with open(static_path, 'r', encoding='utf-8') as f:
+                static_list = json.load(f)
+            static_map = {int(s.get('id')): s for s in static_list if s.get('id') is not None}
+            for it in items:
+                sid = it.get('id')
+                if sid and sid in static_map:
+                    s = static_map[sid]
+                    # preserva campos já retornados pelo BD; adiciona campos de imagem se faltarem
+                    if s.get('img') and not it.get('img'):
+                        it['img'] = s.get('img')
+                    if s.get('imagem_banner') and not it.get('imagem_banner'):
+                        it['imagem_banner'] = s.get('imagem_banner')
+    except Exception:
+        # não fatal: se o arquivo estático faltar ou for inválido, continua sem enriquecimento
+        pass
     return jsonify({
         'news': items,
         'total': pagination.total,
@@ -184,7 +206,23 @@ def get_news(news_id):
     n = News.query.get(news_id)
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
-    return jsonify(n.to_dict()), 200
+    data = n.to_dict()
+    # adiciona campos de imagem vindos do JSON estático, se disponíveis
+    try:
+        static_path = os.path.join(current_app.static_folder, 'json', 'noticias.json')
+        if os.path.exists(static_path):
+            with open(static_path, 'r', encoding='utf-8') as f:
+                static_list = json.load(f)
+            for s in static_list:
+                if s.get('id') is not None and int(s.get('id')) == int(news_id):
+                    if s.get('img') and not data.get('img'):
+                        data['img'] = s.get('img')
+                    if s.get('imagem_banner') and not data.get('imagem_banner'):
+                        data['imagem_banner'] = s.get('imagem_banner')
+                    break
+    except Exception:
+        pass
+    return jsonify(data), 200
 
 
 @news_routes.route('/news/<int:news_id>', methods=['PUT'])
@@ -195,7 +233,7 @@ def update_news(news_id):
         return jsonify({'error': 'Notícia não encontrada'}), 404
 
     user = getattr(request, 'user', None)
-    # Only author or admin
+    # Apenas autor ou admin
     if not user:
         return jsonify({'error': 'Autenticação necessária'}), 401
     if user.id != n.author_id and user.role.value != 'ADMIN':
@@ -208,7 +246,7 @@ def update_news(news_id):
     if tags:
         n.tags = tags
 
-    # Validate and update link
+    # Validar e atualizar link
     if 'link' in data:
         link = data.get('link')
         if link is not None:
@@ -225,7 +263,7 @@ def update_news(news_id):
         else:
             n.link = None
 
-    # parse and set optional dates
+    # analisar e definir datas opcionais
     if 'start_date' in data:
         try:
             sd = parse_datetime(data.get('start_date'))
@@ -242,7 +280,7 @@ def update_news(news_id):
     if n.start_date and n.end_date and n.end_date < n.start_date:
         return jsonify({'error': 'end_date não pode ser anterior a start_date'}), 400
 
-    # If admin updates, accept directly. If author updates, set back to pending for review.
+    # Se admin atualizar, aceita diretamente. Se autor atualizar, volta para PENDENTE para revisão.
     if user.role.value == 'ADMIN':
         n.status = StatusEnum.ACEITA
         n.active = True
@@ -363,3 +401,23 @@ def news_page():
         notify_users_for_news(news)
 
     return jsonify({'message': 'Notícia submetida', 'news': news.to_dict()}), 201
+
+
+
+@news_routes.route('/noticia', methods=['GET'])
+def render_news_template():
+    """Render the news detail page template. The page's JS will fetch the news
+    data from GET /news/<id>. We inject `usuario` when available so templates
+    that expect server-driven user info keep working.
+    """
+    usuario = None
+    token = request.cookies.get('access_token')
+    if token:
+        try:
+            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            user = User.query.get(payload.get('user_id'))
+            if user:
+                usuario = user.to_dict()
+        except Exception:
+            usuario = None
+    return render_template('news.html', usuario=usuario)
