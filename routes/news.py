@@ -87,14 +87,12 @@ def create_news():
 
     tags = parse_tags(tags_raw)
 
-    # If admin, publish directly
+    # If admin, publish directly; otherwise leave as pending
     user = getattr(request, 'user', None)
     if user and user.role.value == 'ADMIN':
         status = StatusEnum.ACEITA
-        active = True
     else:
         status = StatusEnum.PENDENTE
-        active = False
 
     # parse dates if provided
     try:
@@ -120,12 +118,11 @@ def create_news():
 
     db.session.add(news)
     db.session.commit()
-    # Se notícia criada já está ativa, notificar usuários
-    if active:
+    # Se notícia criada já foi aceita, notificar usuários
+    if status == StatusEnum.ACEITA:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(news)
     return jsonify(news.to_dict()), 201
-
 
 @news_routes.route('/news', methods=['GET'])
 def list_news():
@@ -163,9 +160,10 @@ def list_news():
 
     if active is not None:
         if active.lower() in ['true', '1']:
-            q = q.filter(News.active.is_(True))
+            # Consider "active" news to be those with status ACEITA
+            q = q.filter(News.status == StatusEnum.ACEITA)
         elif active.lower() in ['false', '0']:
-            q = q.filter(News.active.is_(False))
+            q = q.filter(News.status != StatusEnum.ACEITA)
 
     # Paginação
     page = int(request.args.get('page', 1))
@@ -246,14 +244,12 @@ def update_news(news_id):
     # If admin updates, accept directly. If author updates, set back to pending for review.
     if user.role.value == 'ADMIN':
         n.status = StatusEnum.ACEITA
-        n.active = True
     else:
         n.status = StatusEnum.PENDENTE
-        n.active = False
 
     db.session.commit()
-    # Se notícia foi ativada por admin, notificar usuários
-    if n.active:
+    # Se notícia foi aceita por admin, notificar usuários
+    if n.status == StatusEnum.ACEITA:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(n)
     return jsonify(n.to_dict()), 200
@@ -277,16 +273,89 @@ def delete_news(news_id):
 
 
 # Renderização da página de cadastro/visualização de notícia
-@news_routes.route('/cadastrar-noticia', methods=['GET'])
+@news_routes.route('/cadastrar-noticia', methods=['GET', 'POST'])
 def news_page():
-    usuario = None
+    if request.method == 'GET':
+        usuario = None
+        token = request.cookies.get('access_token')
+        if token:
+            try:
+                payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+                user = User.query.get(payload.get('user_id'))
+                if user:
+                    usuario = user.to_dict()
+            except Exception:
+                usuario = None
+        # Render the feed page for submitting news
+        return render_template('page_feed.html', usuario=usuario)
+
+    # POST: submissão de notícia via formulário; exige usuário autenticado (cookie)
+    data = request.get_json() or {}
     token = request.cookies.get('access_token')
-    if token:
+    if not token:
+        # fallback to Authorization header
+        token = request.headers.get('Authorization')
+        if token and token.startswith('Bearer '):
+            token = token.split(' ')[1]
+    if not token:
+        return jsonify({'error': 'Autenticação necessária. Faça login.'}), 401
+
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload.get('user_id'))
+        if not user:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401
+
+    title = data.get('title') or data.get('nome') or data.get('instituicao')
+    content = data.get('content') or data.get('descricao') or data.get('descricao')
+    link = data.get('link') or data.get('site')
+    tags_raw = data.get('tags')
+    start_raw = data.get('start_date') or data.get('data-inicio')
+    end_raw = data.get('end_date') or data.get('data-fim')
+
+    if not title or not content:
+        return jsonify({'error': 'title e content são obrigatórios'}), 400
+
+    try:
+        start_date = parse_datetime(start_raw) if start_raw else None
+        end_date = parse_datetime(end_raw) if end_raw else None
+    except ValueError:
+        return jsonify({'error': 'Formato de data inválido. Use ISO 8601.'}), 400
+
+    if start_date and end_date and end_date < start_date:
+        return jsonify({'error': 'end_date não pode ser anterior a start_date'}), 400
+
+    tags = []
+    if tags_raw:
         try:
-            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-            user = User.query.get(payload.get('user_id'))
-            if user:
-                usuario = user.to_dict()
+            tags = parse_tags(tags_raw)
         except Exception:
-            usuario = None
-    return render_template('news.html', usuario=usuario)
+            tags = []
+
+    # If admin, accept directly; otherwise leave as pending
+    if user.role.value == 'ADMIN':
+        status = StatusEnum.ACEITA
+    else:
+        status = StatusEnum.PENDENTE
+
+    news = News(title=title, content=content, author_id=user.id, status=status, link=link)
+    if start_date:
+        news.start_date = start_date
+    if end_date:
+        news.end_date = end_date
+    if tags:
+        news.tags = tags
+
+    db.session.add(news)
+    db.session.commit()
+
+    # If news was accepted immediately, notify
+    if status == StatusEnum.ACEITA:
+        from services.notification_service import notify_users_for_news
+        notify_users_for_news(news)
+
+    return jsonify({'message': 'Notícia submetida', 'news': news.to_dict()}), 201

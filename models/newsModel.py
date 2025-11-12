@@ -27,9 +27,12 @@ class News(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    # Tornamos nullable=True para permitir criação de notícias "externas" ou importadas
+    # sem um author_id disponível no momento da inserção. Ajuste conforme política.
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # Use callables so the timestamp is evaluated at insertion/update time
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     hotNews = db.Column(db.Boolean, default=False)
     start_date = db.Column(db.DateTime, nullable=True)
     end_date = db.Column(db.DateTime, nullable=True)
