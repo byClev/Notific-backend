@@ -208,9 +208,16 @@ def atualizar_usuario(user_id):
     data = request.get_json()
     user.username = data.get('username', user.username)
     user.email = data.get('email', user.email)
+    # role só pode ser alterado por administradores via API
     role = data.get('role')
-    if role:
-        user.role = role
+    requester = getattr(request, 'user', None)
+    if role and requester and getattr(requester, 'role', None) and requester.role.value == 'ADMIN':
+        # aceitar valor somente se for um dos enums
+        try:
+            user.role = RoleEnum[role]
+        except Exception:
+            # não aplicar role inválida
+            pass
     password = data.get('password')
     if password:
         user.set_password(password)
