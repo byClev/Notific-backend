@@ -4,6 +4,13 @@ from enum import Enum
 from datetime import datetime, timezone
 from app import db
 
+# Associação many-to-many entre usuários e notícias para favoritos
+user_favorites = db.Table(
+    'user_favorites',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('news_id', db.Integer, db.ForeignKey('news.id'), primary_key=True)
+)
+
 class StatusEnum(Enum):
     ACEITA = 'ACEITA'
     PENDENTE = 'PENDENTE'
@@ -31,6 +38,9 @@ class News(db.Model):
     link = db.Column(db.String(200), nullable=True)
 
     author = db.relationship('User', backref=db.backref('news', lazy=True))
+
+    # usuários que favoritaram esta notícia (backref cria User.favorite_news)
+    favorited_by = db.relationship('User', secondary=user_favorites, backref=db.backref('favorite_news', lazy='dynamic'))
 
     def to_dict(self) -> dict:
         return {

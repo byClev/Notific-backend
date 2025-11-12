@@ -1,7 +1,8 @@
 # routes/auth.py
 
 import jwt
-from flask import Blueprint, request, jsonify, current_app
+import os
+from flask import Blueprint, request, jsonify, current_app, make_response
 from datetime import datetime, timedelta, timezone
 from models.userModel import User
 from app import db, mail
@@ -41,7 +42,35 @@ def login():
         'exp': datetime.now(timezone.utc) + timedelta(hours=1)
     }
     token = jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
-    return jsonify({'token': token})
+
+    # Códiogo adicionado para definir o cookie que define que o usuário está logado
+
+    # Decide whether cookie should be marked secure (only over HTTPS in production).
+    # Some Flask versions don't expose `app.env`; use the config `ENV` key instead.
+    secure_cookie = (current_app.config.get('ENV') == 'production') or (os.getenv('FLASK_ENV') == 'production')
+
+    # Build response with token and user info and set HttpOnly cookie for server-driven sessions
+    response = make_response(jsonify({'token': token, 'user': user.to_dict()}))
+    # Cookie options: HttpOnly, SameSite Lax to allow POST redirects, secure in production
+    response.set_cookie(
+        'access_token',
+        token,
+        httponly=True,
+        secure=secure_cookie,
+        samesite='Lax',
+        max_age=3600,
+        path='/'
+    )
+    return response
+
+
+@auth_routes.route('/logout', methods=['POST'])
+def logout():
+    # Clear the access_token cookie
+    secure_cookie = (current_app.config.get('ENV') == 'production') or (os.getenv('FLASK_ENV') == 'production')
+    response = make_response(jsonify({'message': 'Logged out'}))
+    response.set_cookie('access_token', '', expires=0, httponly=True, secure=secure_cookie, path='/')
+    return response
 
 @auth_routes.route('/recuperar-senha', methods=['POST'])
 def recuperar_senha():
@@ -101,3 +130,23 @@ def redefinir_senha():
         return jsonify({'error': 'Token expirado'}), 400
     except jwt.InvalidTokenError:
         return jsonify({'error': 'Token inválido'}), 400
+
+
+# Endpoint para retornar o usuário autenticado via cookie HttpOnly
+# Útil para clientes que não conseguem ler o cookie diretamente (JS) —
+# o fetch com credentials:'same-origin' envia o cookie ao servidor.
+@auth_routes.route('/auth/me', methods=['GET'])
+def me_via_cookie():
+    token = request.cookies.get('access_token')
+    if not token:
+        return jsonify({'error': 'Nenhum token encontrado'}), 401
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload.get('user_id'))
+        if not user:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        return jsonify(user.to_dict()), 200
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401

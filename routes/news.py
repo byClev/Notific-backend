@@ -1,6 +1,8 @@
 # routes/news.py
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template, current_app
+import jwt
+from models.userModel import User
 from app import db
 from models.newsModel import News, StatusEnum, TagEnum
 from routes.decorators import token_required, role_required
@@ -272,3 +274,19 @@ def delete_news(news_id):
     db.session.delete(n)
     db.session.commit()
     return jsonify({'message': 'Notícia removida'}), 200
+
+
+# Renderização da página de cadastro/visualização de notícia
+@news_routes.route('/cadastrar-noticia', methods=['GET'])
+def news_page():
+    usuario = None
+    token = request.cookies.get('access_token')
+    if token:
+        try:
+            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            user = User.query.get(payload.get('user_id'))
+            if user:
+                usuario = user.to_dict()
+        except Exception:
+            usuario = None
+    return render_template('news.html', usuario=usuario)

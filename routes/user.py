@@ -1,8 +1,10 @@
 # routes/user.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template, current_app
+import jwt
 from models.userModel import User, RoleEnum
 from app import db
 from routes.decorators import token_required, role_required
+from models.newsModel import News
 
 user_routes = Blueprint('user_routes', __name__)
 
@@ -56,6 +58,84 @@ def me():
     if not user:
         return jsonify({'error': 'Usuário não encontrado'}), 404
     return jsonify(user.to_dict()), 200
+
+
+# Renderização da página de perfil (server-driven)
+@user_routes.route('/perfil', methods=['GET'])
+def perfil():
+    usuario = None
+    token = request.cookies.get('access_token')
+    if token:
+        try:
+            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            user = User.query.get(payload.get('user_id'))
+            if user:
+                usuario = user.to_dict()
+        except Exception:
+            usuario = None
+    return render_template('paginaUsuario.html', usuario=usuario)
+
+
+# Favoritos: listar e alternar (toggle) para o usuário autenticado
+@user_routes.route('/user/favorites', methods=['GET'])
+def list_favorites():
+    # try cookie-based token first (HttpOnly cookie)
+    token = request.cookies.get('access_token')
+    if not token:
+        # fallback to Authorization header
+        token = request.headers.get('Authorization')
+        if token and token.startswith('Bearer '):
+            token = token.split(' ')[1]
+    if not token:
+        return jsonify({'error': 'Usuário não autenticado'}), 401
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload.get('user_id'))
+        if not user:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        favs = [n.to_dict() for n in user.favorite_news]
+        return jsonify({'favorites': favs}), 200
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401
+
+
+@user_routes.route('/user/favorites', methods=['POST'])
+def toggle_favorite():
+    # support cookie-based token or Authorization header
+    token = request.cookies.get('access_token')
+    if not token:
+        token = request.headers.get('Authorization')
+        if token and token.startswith('Bearer '):
+            token = token.split(' ')[1]
+    if not token:
+        return jsonify({'error': 'Usuário não autenticado'}), 401
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload.get('user_id'))
+        if not user:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        data = request.get_json() or {}
+        news_id = data.get('news_id')
+        if not news_id:
+            return jsonify({'error': 'news_id é necessário'}), 400
+        news = News.query.get(int(news_id))
+        if not news:
+            return jsonify({'error': 'Notícia não encontrada'}), 404
+
+        if news in user.favorite_news:
+            user.favorite_news.remove(news)
+            db.session.commit()
+            return jsonify({'message': 'Removido dos favoritos', 'news_id': news.id}), 200
+        else:
+            user.favorite_news.append(news)
+            db.session.commit()
+            return jsonify({'message': 'Adicionado aos favoritos', 'news_id': news.id}), 201
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401
 
 # UPDATE
 @user_routes.route('/user/<int:user_id>', methods=['PUT'])
