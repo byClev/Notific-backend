@@ -87,12 +87,14 @@ def create_news():
 
     tags = parse_tags(tags_raw)
 
-    # If admin, publish directly; otherwise leave as pending
+    # If admin, publish directly
     user = getattr(request, 'user', None)
     if user and user.role.value == 'ADMIN':
         status = StatusEnum.ACEITA
+        active = True
     else:
         status = StatusEnum.PENDENTE
+        active = False
 
     # parse dates if provided
     try:
@@ -118,8 +120,8 @@ def create_news():
 
     db.session.add(news)
     db.session.commit()
-    # Se notícia criada já foi aceita, notificar usuários
-    if status == StatusEnum.ACEITA:
+    # Se notícia criada já está ativa, notificar usuários
+    if active:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(news)
     return jsonify(news.to_dict()), 201
@@ -160,10 +162,9 @@ def list_news():
 
     if active is not None:
         if active.lower() in ['true', '1']:
-            # Consider "active" news to be those with status ACEITA
-            q = q.filter(News.status == StatusEnum.ACEITA)
+            q = q.filter(News.active.is_(True))
         elif active.lower() in ['false', '0']:
-            q = q.filter(News.status != StatusEnum.ACEITA)
+            q = q.filter(News.active.is_(False))
 
     # Paginação
     page = int(request.args.get('page', 1))
@@ -244,12 +245,14 @@ def update_news(news_id):
     # If admin updates, accept directly. If author updates, set back to pending for review.
     if user.role.value == 'ADMIN':
         n.status = StatusEnum.ACEITA
+        n.active = True
     else:
         n.status = StatusEnum.PENDENTE
+        n.active = False
 
     db.session.commit()
-    # Se notícia foi aceita por admin, notificar usuários
-    if n.status == StatusEnum.ACEITA:
+    # Se notícia foi ativada por admin, notificar usuários
+    if n.active:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(n)
     return jsonify(n.to_dict()), 200
@@ -286,8 +289,7 @@ def news_page():
                     usuario = user.to_dict()
             except Exception:
                 usuario = None
-        # Render the feed page for submitting news
-        return render_template('page_feed.html', usuario=usuario)
+        return render_template('news.html', usuario=usuario)
 
     # POST: submissão de notícia via formulário; exige usuário autenticado (cookie)
     data = request.get_json() or {}
@@ -339,8 +341,10 @@ def news_page():
     # If admin, accept directly; otherwise leave as pending
     if user.role.value == 'ADMIN':
         status = StatusEnum.ACEITA
+        active = True
     else:
         status = StatusEnum.PENDENTE
+        active = False
 
     news = News(title=title, content=content, author_id=user.id, status=status, link=link)
     if start_date:
@@ -353,8 +357,8 @@ def news_page():
     db.session.add(news)
     db.session.commit()
 
-    # If news was accepted immediately, notify
-    if status == StatusEnum.ACEITA:
+    # If news activated, notify
+    if active:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(news)
 
