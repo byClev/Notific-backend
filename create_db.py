@@ -14,6 +14,7 @@ O script:
 import os
 import sys
 import traceback
+from urllib.parse import urlparse
 
 try:
     import psycopg2
@@ -44,6 +45,22 @@ def load_env(env_path):
             k, v = line.split('=', 1)
             env[k.strip()] = v.strip().strip('"').strip("'")
     return env
+
+
+def parse_database_url(database_url: str):
+    """Parse a SQLAlchemy/Postgres DATABASE_URL into components.
+    Returns (user, password, host, port, dbname)
+    """
+    if not database_url:
+        return None
+    parsed = urlparse(database_url)
+    # parsed.path may be like '/dbname'
+    dbname = parsed.path.lstrip('/') if parsed.path else None
+    user = parsed.username
+    password = parsed.password
+    host = parsed.hostname or 'localhost'
+    port = parsed.port or '5432'
+    return user, password, host, port, dbname
 
 
 def drop_and_create_db(user, password, host, port, dbname):
@@ -161,24 +178,56 @@ def ensure_admin_user(database_url, username='notific', email='Notificufal@gmail
 
 def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))  # src/backend
-    env_path = os.path.join(base_dir, '.env')
-    try:
-        env = load_env(env_path)
-    except Exception as e:
-        print('Falha ao ler .env:', e)
-        sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser(description='Drop and recreate the database using migrations')
+    parser.add_argument('--database-url', dest='database_url', help='Full DATABASE_URL (postgresql://user:pass@host:port/dbname)')
+    parser.add_argument('--yes', dest='yes', action='store_true', help='Skip interactive confirmation')
+    args = parser.parse_args()
 
-    DB_USER = env.get('DB_USER') or env.get('POSTGRES_USER')
-    DB_PASSWORD = env.get('DB_PASSWORD') or env.get('POSTGRES_PASSWORD')
-    DB_HOST = env.get('DB_HOST', 'localhost')
-    DB_PORT = env.get('DB_PORT', '5432')
-    DB_NAME = env.get('DB_NAME') or env.get('POSTGRES_DB')
+    # Determine DATABASE_URL: CLI > env var > .env file (backend) > repo root .env
+    database_url = args.database_url or os.environ.get('DATABASE_URL')
+    env = {}
+    if not database_url:
+        # try backend .env then repo root .env
+        env_path = os.path.join(base_dir, '.env')
+        alt_env_path = os.path.abspath(os.path.join(base_dir, '..', '..', '.env'))
+        if os.path.exists(env_path):
+            try:
+                env = load_env(env_path)
+            except Exception as e:
+                print('Aviso: falha ao ler .env em src/backend:', e)
+        elif os.path.exists(alt_env_path):
+            try:
+                env = load_env(alt_env_path)
+            except Exception as e:
+                print('Aviso: falha ao ler .env no repo root:', e)
 
-    if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME]):
-        print('Variáveis DB_* faltando no .env. Verifique DB_USER/DB_PASSWORD/DB_HOST/DB_PORT/DB_NAME.')
-        sys.exit(1)
+    if not database_url:
+        DB_USER = env.get('DB_USER') or env.get('POSTGRES_USER')
+        DB_PASSWORD = env.get('DB_PASSWORD') or env.get('POSTGRES_PASSWORD')
+        DB_HOST = env.get('DB_HOST', 'localhost')
+        DB_PORT = env.get('DB_PORT', '5432')
+        DB_NAME = env.get('DB_NAME') or env.get('POSTGRES_DB')
 
-    database_url = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+        if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME]):
+            print('Variáveis DB_* faltando. Forneça um DATABASE_URL ou um .env com DB_USER/DB_PASSWORD/DB_HOST/DB_PORT/DB_NAME.')
+            sys.exit(1)
+
+        database_url = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+    else:
+        # parse to components for drop/create
+        parsed = parse_database_url(database_url)
+        if not parsed:
+            print('DATABASE_URL mal formada. Certifique-se de usar o formato postgresql://user:pass@host:port/dbname')
+            sys.exit(1)
+        DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME = parsed
+
+    # Confirm destructive action unless --yes
+    if not args.yes:
+        prompt = input(f"Este script irá DROP/CREATE o banco '{DB_NAME}' em {DB_HOST}:{DB_PORT}. Continuar? (yes/no) [no]: ")
+        if prompt.strip().lower() != 'yes':
+            print('Operação cancelada pelo usuário.')
+            sys.exit(0)
 
     try:
         drop_and_create_db(DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME)
