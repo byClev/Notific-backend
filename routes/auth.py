@@ -99,15 +99,21 @@ def recuperar_senha():
 
 @auth_routes.route('/redefinir-senha', methods=['GET', 'POST'])
 def redefinir_senha():
-    # GET: valida token enviado como query param
+    # GET: se acessado por navegador, renderiza o formulário de redefinição
     if request.method == 'GET':
         token = request.args.get('token')
+        # Se o cliente preferir HTML (navegador), renderize a página com o token
+        if request.accept_mimetypes.accept_html:
+            return render_template('redefinirSenha.html', token=token)
+
+        # comportamento API: valida o token e retorna JSON
+        if not token:
+            return jsonify({'error': 'Token ausente'}), 400
         try:
             payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
             user = User.query.get(payload['user_id'])
             if not user:
                 return jsonify({'error': 'Usuário não encontrado'}), 404
-            # Retorna apenas status para o frontend renderizar o formulário
             return jsonify({'message': 'Token válido, pode redefinir a senha.'}), 200
         except jwt.ExpiredSignatureError:
             return jsonify({'error': 'Token expirado'}), 400
