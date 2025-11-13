@@ -23,7 +23,7 @@ def change_user_role():
     return jsonify({'message': f'Role do usuário {user.username} alterada para {new_role}.'}), 200
 
 @admin_panel.route('/admin/news/pending', methods=['GET'])
-@role_required('ADMIN')
+@role_required(['ADMIN', 'MODERATOR'])
 @token_required
 def list_pending_news():
     items = News.query.filter(News.status == StatusEnum.PENDENTE).order_by(News.created_at.asc()).all()
@@ -31,7 +31,7 @@ def list_pending_news():
 
 
 @admin_panel.route('/admin/news/<int:news_id>/approve', methods=['POST'])
-@role_required('ADMIN')
+@role_required(['ADMIN', 'MODERATOR'])
 @token_required
 def approve_news(news_id):
     n = News.query.get(news_id)
@@ -47,7 +47,7 @@ def approve_news(news_id):
 
 
 @admin_panel.route('/admin/news/<int:news_id>/reject', methods=['POST'])
-@role_required('ADMIN')
+@role_required(['ADMIN', 'MODERATOR'])
 @token_required
 def reject_news(news_id):
     n = News.query.get(news_id)
