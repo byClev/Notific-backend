@@ -76,6 +76,16 @@ def perfil():
     return render_template('paginaUsuario.html', usuario=usuario)
 
 
+# Public profile view for any user by id (renders same template but with that user's data)
+@user_routes.route('/perfil/<int:user_id>', methods=['GET'])
+def perfil_public(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'Usuário não encontrado'}), 404
+    # Render the same template but inject the requested user's data as `usuario`
+    return render_template('paginaUsuario.html', usuario=user.to_dict())
+
+
 # Favoritos: listar e alternar (toggle) para o usuário autenticado
 @user_routes.route('/user/favorites', methods=['GET'])
 def list_favorites():

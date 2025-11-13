@@ -1,6 +1,6 @@
 # routes/news.py
 
-from flask import Blueprint, request, jsonify, render_template, current_app
+from flask import Blueprint, request, jsonify, render_template, current_app, url_for
 import jwt
 from models.userModel import User
 from app import db
@@ -11,6 +11,7 @@ from routes.decorators import token_required, role_required
 from datetime import datetime, timezone, timedelta
 import json
 import os
+from werkzeug.utils import secure_filename
 
 news_routes = Blueprint('news_routes', __name__)
 
@@ -121,6 +122,17 @@ def create_news():
         news.end_date = end_date
     if tags:
         news.tags = tags
+
+    # accept image paths if provided (client may upload first to /upload-image and pass returned path)
+    img_path = data.get('img') or data.get('imagem') or data.get('imagem_banner') or data.get('imagemBanner')
+    if img_path:
+        # prefer explicit imagem_banner when provided
+        if data.get('imagem_banner') or data.get('imagemBanner'):
+            news.imagem_banner = img_path
+        else:
+            # set both for compatibility
+            news.img = img_path
+            news.imagem_banner = img_path
 
     db.session.add(news)
     try:
@@ -245,6 +257,40 @@ def get_news(news_id):
     except Exception:
         pass
     return jsonify(data), 200
+
+
+# Endpoint to upload an image file and return a static path to be saved on a News record
+@news_routes.route('/upload-image', methods=['POST'])
+@token_required
+def upload_image():
+    # Expects multipart/form-data with file field 'file' or 'foto'
+    if 'file' in request.files:
+        f = request.files['file']
+    elif 'foto' in request.files:
+        f = request.files['foto']
+    else:
+        return jsonify({'error': 'No file part'}), 400
+
+    if f.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    filename = secure_filename(f.filename)
+    # ensure upload dir exists
+    upload_dir = os.path.join(current_app.static_folder, 'img', 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+    # avoid collisions by prefixing timestamp
+    import time
+    filename = f"{int(time.time())}_{filename}"
+    dest = os.path.join(upload_dir, filename)
+    try:
+        f.save(dest)
+    except Exception as e:
+        current_app.logger.exception('Failed to save uploaded image')
+        return jsonify({'error': 'Failed to save file'}), 500
+
+    # Return the static URL path to the uploaded file
+    static_url = url_for('static', filename=f'img/uploads/{filename}')
+    return jsonify({'path': static_url}), 201
 
 
 @news_routes.route('/news/<int:news_id>', methods=['PUT'])

@@ -13,14 +13,33 @@ def notify_users_for_news(news: News):
         return
     # Para cada tag da notícia, buscar usuários que têm essa preferência
     for tag in news.tags:
-        # news.tags may contain TagEnum members; User.notification_preferences uses a
-        # different Enum type (NotificationPreferenceEnum). Convert to the string
-        # name so SQLAlchemy can match the DB enum value correctly.
+        # Map TagEnum values to NotificationPreferenceEnum names used in users.notification_preferences
+        # TagEnum: PROJETO, EVENTO, VAGA
+        # NotificationPreferenceEnum: PROJETO, EVENTO, OPORTUNIDADE, TODOS
         try:
-            tag_name = tag.value if isinstance(tag, PyEnum) else str(tag).upper()
+            tag_key = tag.name if isinstance(tag, PyEnum) else str(tag).upper()
         except Exception:
-            tag_name = str(tag).upper()
-        users = User.query.filter(User.notification_preferences.any(tag_name)).all()
+            tag_key = str(tag).upper()
+
+        mapping = {
+            'PROJETO': 'PROJETO',
+            'EVENTO': 'EVENTO',
+            'VAGA': 'OPORTUNIDADE'
+        }
+
+        pref_name = mapping.get(tag_key)
+        if not pref_name:
+            # skip unknown tags
+            continue
+
+        try:
+            pref_enum = NotificationPreferenceEnum[pref_name]
+        except Exception:
+            # fallback: skip if mapping resolves to an unknown enum
+            continue
+
+        # Use the enum member when querying the DB so SQLAlchemy emits correct enum literal
+        users = User.query.filter(User.notification_preferences.any(pref_enum)).all()
         for user in users:
             # Criar notificação
             message = f'Nova notícia: {news.title} ({tag.value})'
