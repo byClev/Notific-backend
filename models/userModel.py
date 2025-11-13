@@ -13,7 +13,7 @@ class RoleEnum(Enum):
 
 class NotificationPreferenceEnum(Enum):
     EVENTO = 'EVENTO'
-    OPORTUNIDADE = 'OPORTUNIDADE'
+    VAGA = 'VAGA'
     PROJETO = 'PROJETO'
     TODOS = 'TODOS'
 
