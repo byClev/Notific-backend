@@ -4,6 +4,8 @@ from flask import Blueprint, request, jsonify, render_template, current_app
 import jwt
 from models.userModel import User
 from app import db
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql import text
 from models.newsModel import News, StatusEnum, TagEnum
 from routes.decorators import token_required, role_required
 from datetime import datetime, timezone, timedelta
@@ -121,7 +123,27 @@ def create_news():
         news.tags = tags
 
     db.session.add(news)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as e:
+        # Handle possible sequence mismatch (e.g., after seeding static JSON)
+        db.session.rollback()
+        try:
+            if 'news_pkey' in str(e.orig) or 'duplicate key value' in str(e.orig).lower():
+                current_app.logger.warning('IntegrityError on News insert, attempting to fix news id sequence')
+                # set the sequence to the current max(id) so nextval yields max+1
+                seq_fix_sql = "SELECT setval(pg_get_serial_sequence('news','id'), COALESCE((SELECT MAX(id) FROM news), 0))"
+                db.session.execute(text(seq_fix_sql))
+                db.session.commit()
+                # retry insert
+                db.session.add(news)
+                db.session.commit()
+            else:
+                raise
+        except Exception:
+            current_app.logger.exception('Failed to recover from IntegrityError when inserting News')
+            db.session.rollback()
+            return jsonify({'error': 'Erro ao salvar notícia (integrity error).'}), 500
     # Se notícia criada já está ativa, notificar usuários
     if active:
         from services.notification_service import notify_users_for_news
@@ -327,7 +349,7 @@ def news_page():
                     usuario = user.to_dict()
             except Exception:
                 usuario = None
-        return render_template('news.html', usuario=usuario)
+        return render_template('page_feed.html', usuario=usuario)
 
     # POST: submissão de notícia via formulário; exige usuário autenticado (cookie)
     data = request.get_json() or {}
@@ -408,7 +430,25 @@ def news_page():
         news.tags = tags
 
     db.session.add(news)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as e:
+        db.session.rollback()
+        try:
+            if 'news_pkey' in str(e.orig) or 'duplicate key value' in str(e.orig).lower():
+                current_app.logger.warning('IntegrityError on News insert (cadastrar-noticia), attempting to fix news id sequence')
+                seq_fix_sql = "SELECT setval(pg_get_serial_sequence('news','id'), COALESCE((SELECT MAX(id) FROM news), 0))"
+                db.session.execute(text(seq_fix_sql))
+                db.session.commit()
+                # retry insert
+                db.session.add(news)
+                db.session.commit()
+            else:
+                raise
+        except Exception:
+            current_app.logger.exception('Failed to recover from IntegrityError when inserting News (cadastrar-noticia)')
+            db.session.rollback()
+            return jsonify({'error': 'Erro ao salvar notícia (integrity error).'}), 500
 
     # If news activated, notify
     if active:

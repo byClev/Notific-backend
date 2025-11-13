@@ -2,6 +2,7 @@
 
 from models.userModel import User, NotificationPreferenceEnum
 from models.newsModel import News, TagEnum
+from enum import Enum as PyEnum
 from models.notificationModel import Notification, UserNotification
 from app import db
 
@@ -12,7 +13,14 @@ def notify_users_for_news(news: News):
         return
     # Para cada tag da notícia, buscar usuários que têm essa preferência
     for tag in news.tags:
-        users = User.query.filter(User.notification_preferences.any(tag)).all()
+        # news.tags may contain TagEnum members; User.notification_preferences uses a
+        # different Enum type (NotificationPreferenceEnum). Convert to the string
+        # name so SQLAlchemy can match the DB enum value correctly.
+        try:
+            tag_name = tag.value if isinstance(tag, PyEnum) else str(tag).upper()
+        except Exception:
+            tag_name = str(tag).upper()
+        users = User.query.filter(User.notification_preferences.any(tag_name)).all()
         for user in users:
             # Criar notificação
             message = f'Nova notícia: {news.title} ({tag.value})'
