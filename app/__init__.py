@@ -29,21 +29,8 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Ensure new image columns exist in the `news` table to avoid ProgrammingError
-    # Uses Postgres `ADD COLUMN IF NOT EXISTS` so it's safe to run multiple times.
-    try:
-        with app.app_context():
-            with db.engine.connect() as conn:
-                conn.execute(text("ALTER TABLE news ADD COLUMN IF NOT EXISTS img VARCHAR(400)"))
-                conn.execute(text("ALTER TABLE news ADD COLUMN IF NOT EXISTS imagem_banner VARCHAR(400)"))
-                # commit if the DB requires it
-                conn.commit()
-    except Exception as e:
-        # don't prevent app startup; log for debugging
-        try:
-            app.logger.exception('Failed to ensure news image columns')
-        except Exception:
-            print('Failed to ensure news image columns:', e)
+    # Note: image columns are not persisted on the News model anymore.
+    # Any enrichment from static JSON is performed at the route level.
 
     from routes.home import home_routes
     from routes.user import user_routes
