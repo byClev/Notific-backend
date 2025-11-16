@@ -3,7 +3,7 @@ Script destrutivo para DROPAR e RECRIAR o banco PostgreSQL a partir da
 migração inicial (Alembic). Use com cuidado — faça backup se necessário.
 
 Como usar (PowerShell, no root do repo):
-& .\.venv\Scripts\Activate.ps1
+& .venv\Scripts\Activate.ps1
 python src/backend/reset_db.py
 
 O script:

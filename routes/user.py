@@ -1,7 +1,7 @@
 # routes/user.py
 from flask import Blueprint, request, jsonify, render_template, current_app
 import jwt
-from models.userModel import User, RoleEnum
+from models.userModel import User, RoleEnum, NotificationPreferenceEnum
 from app import db
 from routes.decorators import token_required, role_required
 from models.newsModel import News
@@ -245,3 +245,21 @@ def deletar_usuario(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'Usuário deletado com sucesso'}), 200
+
+@user_routes.route('/user/update-preferences', methods=['POST'])
+@token_required
+def update_preferences():
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'success': False, 'error': 'Usuário não autenticado'}), 401
+    data = request.get_json()
+    prefs = data.get('notification_preferences')
+    if not isinstance(prefs, list):
+        return jsonify({'success': False, 'error': 'Formato inválido'}), 400
+    try:
+        enum_prefs = [NotificationPreferenceEnum[p.upper()].value for p in prefs]
+    except KeyError:
+        return jsonify({'success': False, 'error': 'Preferência inválida'}), 400
+    user.notification_preferences = enum_prefs
+    db.session.commit()
+    return jsonify({'success': True}), 200

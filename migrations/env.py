@@ -1,18 +1,9 @@
-# migrations/env.py
-
 import logging
 from logging.config import fileConfig
 
-
 from flask import current_app
-from app import create_app  # ajuste se o nome do seu factory for diferente
 
 from alembic import context
-
-
-# Cria o contexto da aplicação Flask
-app = create_app()  # ajuste se necessário
-app.app_context().push()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
