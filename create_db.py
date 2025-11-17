@@ -3,7 +3,7 @@ Script destrutivo para DROPAR e RECRIAR o banco PostgreSQL a partir da
 migração inicial (Alembic). Use com cuidado — faça backup se necessário.
 
 Como usar (PowerShell, no root do repo):
-& .venv\Scripts\Activate.ps1
+& .\.venv\Scripts\Activate.ps1
 python src/backend/reset_db.py
 
 O script:
@@ -71,6 +71,18 @@ def drop_and_create_db(user, password, host, port, dbname):
     cur = conn.cursor()
     try:
         print(f'Dropping database "{dbname}" (se existir)...')
+        # Terminate other backends connected to the target database so DROP can proceed
+        try:
+            terminate_sql = ("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                             "WHERE datname = %s AND pid <> pg_backend_pid();")
+            cur.execute(terminate_sql, (dbname,))
+            terminated = cur.rowcount
+            if terminated:
+                print(f'Terminadas {terminated} sessões conectadas ao banco "{dbname}".')
+        except Exception as e:
+            # não fatal — apenas informa
+            print('Aviso: falha ao terminar sessões ativas antes do DROP:', e)
+
         cur.execute(f'DROP DATABASE IF EXISTS "{dbname}";')
         print(f'Criando database "{dbname}"...')
         cur.execute(f'CREATE DATABASE "{dbname}";')

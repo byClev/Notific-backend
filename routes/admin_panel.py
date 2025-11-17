@@ -123,6 +123,85 @@ def reject_news(news_id):
     return jsonify(n.to_dict()), 200
 
 
+@admin_panel.route('/admin/news/<int:news_id>/set_pending', methods=['POST'])
+@role_required(['ADMIN', 'MODERATOR'])
+@token_required
+def set_news_pending(news_id):
+    n = News.query.get(news_id)
+    if not n:
+        return jsonify({'error': 'Notícia não encontrada'}), 404
+    n.status = StatusEnum.PENDENTE
+    n.active = False
+    db.session.commit()
+    return jsonify(n.to_dict()), 200
+
+
+@admin_panel.route('/admin/news/<int:news_id>/set_hot', methods=['POST'])
+@role_required(['ADMIN', 'MODERATOR'])
+@token_required
+def set_news_hot(news_id):
+    n = News.query.get(news_id)
+    if not n:
+        return jsonify({'error': 'Notícia não encontrada'}), 404
+    payload = request.get_json(silent=True) or {}
+    try:
+        n.hotNews = bool(payload.get('hot', True))
+    except Exception:
+        n.hotNews = True
+    db.session.commit()
+    return jsonify(n.to_dict()), 200
+
+
+@admin_panel.route('/admin/news/<int:news_id>/update-tags', methods=['POST'])
+@role_required(['ADMIN', 'MODERATOR'])
+@token_required
+def update_news_tags(news_id):
+    n = News.query.get(news_id)
+    if not n:
+        return jsonify({'error': 'Notícia não encontrada'}), 404
+    payload = request.get_json(silent=True) or {}
+    tags_payload = payload.get('tags')
+    parsed = []
+    if tags_payload is not None:
+        try:
+            if isinstance(tags_payload, list):
+                candidates = tags_payload
+            else:
+                candidates = [t.strip() for t in str(tags_payload).split(',') if t.strip()]
+            for t in candidates:
+                try:
+                    if isinstance(t, str):
+                        key = t.strip().upper()
+                        if key in TagEnum.__members__:
+                            parsed.append(TagEnum[key])
+                        else:
+                            # try value
+                            parsed.append(TagEnum(key))
+                    else:
+                        parsed.append(t)
+                except Exception:
+                    continue
+        except Exception:
+            parsed = []
+
+    if parsed:
+        n.tags = parsed
+        db.session.commit()
+    return jsonify(n.to_dict()), 200
+
+
+@admin_panel.route('/admin/news/<int:news_id>/delete', methods=['DELETE'])
+@role_required(['ADMIN', 'MODERATOR'])
+@token_required
+def delete_news_admin(news_id):
+    n = News.query.get(news_id)
+    if not n:
+        return jsonify({'error': 'Notícia não encontrada'}), 404
+    db.session.delete(n)
+    db.session.commit()
+    return jsonify({'message': 'Notícia removida'}), 200
+
+
 # Dev-only diagnostic route: inspect access_token cookie and decoded payload
 @admin_panel.route('/admin/debug/token', methods=['GET'])
 def debug_token():
@@ -139,3 +218,43 @@ def debug_token():
         except Exception as e:
             info['decode_error'] = str(e)
     return jsonify(info), 200
+
+# Em /routes/admin_panel.py
+from sqlalchemy import or_ # Importe o 'or_' do SQLAlchemy no topo
+
+# ... (resto do seu admin_panel.py) ...
+
+@admin_panel.route('/admin/api/search-user', methods=['GET'])
+@role_required(['ADMIN', 'MODERATOR']) # Apenas admins/mods podem buscar
+@token_required
+def search_user_api():
+    """
+    (NOVA ROTA)
+    Busca um usuário por ID, username ou e-mail e retorna seu JSON.
+    """
+    termo = request.args.get('termo')
+    if not termo:
+        return jsonify({'error': 'Termo de busca ausente'}), 400
+
+    user = None
+    
+    # 1. Tenta buscar por ID se for um número
+    if termo.isdigit():
+        user = User.query.get(int(termo))
+
+    # 2. Se não achou por ID, tenta por username ou e-mail
+    if not user:
+        # Usamos 'ilike' para busca case-insensitive (ignorando maiúsculas/minúsculas)
+        user = User.query.filter(
+            or_(
+                User.username.ilike(f'%{termo}%'),
+                User.email.ilike(f'%{termo}%')
+            )
+        ).first() # Pega o primeiro resultado
+
+    # 3. Se não encontrou ninguém
+    if not user:
+        return jsonify({'error': 'Usuário não encontrado'}), 404
+
+    # Se encontrou, retorna o JSON do usuário
+    return jsonify(user.to_dict()), 200

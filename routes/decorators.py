@@ -38,11 +38,34 @@ def role_required(required_role):
             user = getattr(request, 'user', None)
             # Support passing a single role (string) or a list/tuple of allowed roles
             if isinstance(required_role, (list, tuple, set)):
-                allowed = set(required_role)
+                allowed = {str(r).upper() for r in required_role}
             else:
-                allowed = {required_role}
+                allowed = {str(required_role).upper()}
 
-            if not user or user.role.value not in allowed:
+            # Normalize user's role value to a comparable string
+            try:
+                user_role_val = (user.role.value if hasattr(user.role, 'value') else user.role)
+            except Exception:
+                user_role_val = None
+
+            user_role_norm = str(user_role_val).upper() if user_role_val else None
+
+            # Alias groups: consider common synonyms between languages
+            moderator_aliases = {'MODERADOR', 'MODERATOR', 'MOD'}
+            admin_aliases = {'ADMIN'}
+
+            allowed_match = False
+            if user_role_norm and user_role_norm in allowed:
+                allowed_match = True
+            else:
+                # Special-case: if allowed includes any moderator synonym, accept any moderator alias
+                if allowed & moderator_aliases and user_role_norm in moderator_aliases:
+                    allowed_match = True
+                # Special-case: admin aliases
+                if allowed & admin_aliases and user_role_norm in admin_aliases:
+                    allowed_match = True
+
+            if not user or not allowed_match:
                 return jsonify({'error': 'Acesso restrito a {}'.format(required_role)}), 403
             return f(*args, **kwargs)
         return wrapped
