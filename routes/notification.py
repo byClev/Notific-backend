@@ -49,3 +49,26 @@ def mark_notification_viewed(notification_id):
     n.viewed = True
     db.session.commit()
     return jsonify({'success': True}), 200
+
+
+@notification_routes.route('/notifications/mark_all_read', methods=['POST'])
+@token_required
+def mark_all_read():
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'error': 'Usuário não autenticado'}), 401
+    UserNotification.query.filter_by(user_id=user.id, viewed=False).update({"viewed": True})
+    db.session.commit()
+    return jsonify({'success': True}), 200
+
+
+@notification_routes.route('/notifications/clear', methods=['POST'])
+@token_required
+def clear_notifications():
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'error': 'Usuário não autenticado'}), 401
+    # Remove only the user's notification links; keep Notification records (audit) if desired
+    UserNotification.query.filter_by(user_id=user.id).delete()
+    db.session.commit()
+    return jsonify({'success': True}), 200
