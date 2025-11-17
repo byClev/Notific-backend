@@ -5,17 +5,17 @@ from models.newsModel import News, TagEnum
 from enum import Enum as PyEnum
 from models.notificationModel import Notification, UserNotification
 from app import db
-
-# Função para criar e enviar notificações para usuários com preferência correspondente à tag da notícia
+import threading
+from flask import current_app
+from services.email_service import send_email
 
 def notify_users_for_news(news: News):
     if not news.tags:
         return
-    # Para cada tag da notícia, buscar usuários que têm essa preferência
+
+    recipients = []  # lista de tuplas (email, message)
+
     for tag in news.tags:
-        # Map TagEnum values to NotificationPreferenceEnum names used in users.notification_preferences
-        # TagEnum: PROJETO, EVENTO, VAGA
-        # NotificationPreferenceEnum: PROJETO, EVENTO, OPORTUNIDADE, TODOS
         try:
             tag_key = tag.name if isinstance(tag, PyEnum) else str(tag).upper()
         except Exception:
@@ -29,30 +29,44 @@ def notify_users_for_news(news: News):
 
         pref_name = mapping.get(tag_key)
         if not pref_name:
-            # skip unknown tags
             continue
 
         try:
             pref_enum = NotificationPreferenceEnum[pref_name]
         except Exception:
-            # fallback: skip if mapping resolves to an unknown enum
             continue
 
-        # Use the enum member when querying the DB so SQLAlchemy emits correct enum literal
         users = User.query.filter(User.notification_preferences.any(pref_enum)).all()
         for user in users:
-            # Criar notificação
             message = f'Nova notícia: {news.title} ({tag.value})'
             notification = Notification(news_id=news.id, message=message)
             db.session.add(notification)
-            db.session.flush()  # Para obter o id da notificação
-            # Relacionar notificação ao usuário
+            db.session.flush()  # para obter id
             user_notification = UserNotification(user_id=user.id, notification_id=notification.id)
             db.session.add(user_notification)
-                # Enviar email
-            from services.email_service import send_email
-            send_email(user.email, 'Nova Notificação', message)
-    db.session.commit()
+            recipients.append((user.email, message))
+
+    # commit das notificações e relacionamentos primeiro
+    if recipients:
+        db.session.commit()
+    else:
+        # se não houve destinatários apenas rollback/commit para garantir consistência
+        db.session.commit()
+
+    # envio assíncrono dos e-mails em uma thread separada
+    if recipients:
+        app = current_app._get_current_object()
+
+        def _send_all_emails(recipients_list, app_ctx):
+            with app_ctx.app_context():
+                for email, msg in recipients_list:
+                    try:
+                        send_email(email, 'Nova Notificação', msg)
+                    except Exception:
+                        app_ctx.logger.exception("Falha ao enviar e-mail para %s", email)
+
+        thread = threading.Thread(target=_send_all_emails, args=(recipients, app), daemon=True)
+        thread.start()
 
 # Função para buscar últimas 10 notificações e contar não visualizadas
 
