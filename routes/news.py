@@ -73,6 +73,7 @@ def create_news():
     start_raw = data.get('start_date')
     end_raw = data.get('end_date')
     link = data.get('link')
+    image = data.get('image')
     
     # Validar link
     if link is not None:
@@ -96,10 +97,23 @@ def create_news():
     user = getattr(request, 'user', None)
     if user and user.role.value == 'ADMIN':
         status = StatusEnum.ACEITA
-        active = True
     else:
         status = StatusEnum.PENDENTE
-        active = False
+
+    # Rate limit: users with role USUARIO can only submit once every 5 minutes
+    try:
+        if user and user.role.value == 'USUARIO':
+            five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+            last = News.query.filter(News.author_id == user.id).order_by(News.created_at.desc()).first()
+            if last and last.created_at and last.created_at > five_minutes_ago:
+                # calcula tempo restante em segundos
+                remaining = (last.created_at + timedelta(minutes=5) - datetime.now(timezone.utc)).total_seconds()
+                minutes = int(remaining // 60)
+                seconds = int(remaining % 60)
+                return jsonify({'error': f'Você só pode submeter uma notícia a cada 5 minutos. Tente novamente em {minutes}m{seconds}s.'}), 429
+    except Exception:
+        # Não falhar a submissão por erro na verificação de rate-limit; apenas logar e continuar
+        current_app.logger.exception('Erro ao verificar rate limit de submissão de notícia')
 
     # analisa as datas se fornecidas
     try:
@@ -114,7 +128,7 @@ def create_news():
     if start_date and end_date and end_date < start_date:
         return jsonify({'error': 'end_date não pode ser anterior a start_date'}), 400
 
-    news = News(title=title, content=content, author_id=user.id if user else None, status=status, active=active, link=link)
+    news = News(title=title, content=content, author_id=user.id if user else None, status=status, link=link, image=image)
     
     if start_date:
         news.start_date = start_date
@@ -122,8 +136,6 @@ def create_news():
         news.end_date = end_date
     if tags:
         news.tags = tags
-
-    # Image persistence removed: image uploads are no longer stored on the News model.
 
     db.session.add(news)
     try:
@@ -147,20 +159,19 @@ def create_news():
             current_app.logger.exception('Failed to recover from IntegrityError when inserting News')
             db.session.rollback()
             return jsonify({'error': 'Erro ao salvar notícia (integrity error).'}), 500
-    # Se notícia criada já está ativa, notificar usuários
-    if active:
+    # Se notícia criada já está aceita (admin), notificar usuários
+    if news.status == StatusEnum.ACEITA:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(news)
     return jsonify(news.to_dict()), 201
 
 @news_routes.route('/news', methods=['GET'])
 def list_news():
-    # Filters: tags (comma or list), status, author_id, active
+    # Filters: tags (comma or list), status, author_id
     q = News.query
     tags_raw = request.args.get('tags')
     status_raw = request.args.get('status')
     author_id = request.args.get('author_id')
-    active = request.args.get('active')
     link = request.args.get('link')
 
     if tags_raw:
@@ -186,12 +197,6 @@ def list_news():
             q = q.filter(News.author_id == int(author_id))
         except Exception:
             pass
-
-    if active is not None:
-        if active.lower() in ['true', '1']:
-            q = q.filter(News.active.is_(True))
-        elif active.lower() in ['false', '0']:
-            q = q.filter(News.active.is_(False))
 
     # Paginação
     page = int(request.args.get('page', 1))
@@ -307,14 +312,12 @@ def update_news(news_id):
     # Se admin atualizar, aceita diretamente. Se autor atualizar, volta para PENDENTE para revisão.
     if user.role.value == 'ADMIN':
         n.status = StatusEnum.ACEITA
-        n.active = True
     else:
         n.status = StatusEnum.PENDENTE
-        n.active = False
 
     db.session.commit()
-    # Se notícia foi ativada por admin, notificar usuários
-    if n.active:
+    # Se notícia foi aceita por admin, notificar usuários
+    if n.status == StatusEnum.ACEITA:
         from services.notification_service import notify_users_for_news
         notify_users_for_news(n)
     return jsonify(n.to_dict()), 200
@@ -332,132 +335,29 @@ def delete_news(news_id):
     if user.id != n.author_id and user.role.value != 'ADMIN':
         return jsonify({'error': 'Permissão negada'}), 403
 
+    # Delete notifications linked to this news first
+    from models.notificationModel import Notification
+    Notification.query.filter_by(news_id=news_id).delete()
     db.session.delete(n)
     db.session.commit()
     return jsonify({'message': 'Notícia removida'}), 200
 
 
 # Renderização da página de cadastro/visualização de notícia
-@news_routes.route('/cadastrar-noticia', methods=['GET', 'POST'])
+@news_routes.route('/news-render', methods=['GET'])
 def news_page():
-    if request.method == 'GET':
-        usuario = None
-        token = request.cookies.get('access_token')
-        if token:
-            try:
-                payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-                user = User.query.get(payload.get('user_id'))
-                if user:
-                    usuario = user.to_dict()
-            except Exception:
-                usuario = None
-        return render_template('page_feed.html', usuario=usuario)
-
-    # POST: submissão de notícia via formulário; exige usuário autenticado (cookie)
-    data = request.get_json() or {}
+    """Render the page_feed.html template for creating/viewing news."""
+    usuario = None
     token = request.cookies.get('access_token')
-    if not token:
-        # fallback to Authorization header
-        token = request.headers.get('Authorization')
-        if token and token.startswith('Bearer '):
-            token = token.split(' ')[1]
-    if not token:
-        return jsonify({'error': 'Autenticação necessária. Faça login.'}), 401
-
-    try:
-        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-        user = User.query.get(payload.get('user_id'))
-        if not user:
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-    except jwt.ExpiredSignatureError:
-        return jsonify({'error': 'Token expirado'}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({'error': 'Token inválido'}), 401
-
-    title = data.get('title') or data.get('nome')
-    content = data.get('content') or data.get('descricao') or data.get('descricao')
-    link = data.get('link') or data.get('site')
-    tags_raw = data.get('tags')
-    start_raw = data.get('start_date') or data.get('data-inicio')
-    end_raw = data.get('end_date') or data.get('data-fim')
-
-    if not title or not content:
-        return jsonify({'error': 'title e content são obrigatórios'}), 400
-
-    try:
-        start_date = parse_datetime(start_raw) if start_raw else None
-        end_date = parse_datetime(end_raw) if end_raw else None
-    except ValueError:
-        return jsonify({'error': 'Formato de data inválido. Use ISO 8601.'}), 400
-
-    if start_date and end_date and end_date < start_date:
-        return jsonify({'error': 'end_date não pode ser anterior a start_date'}), 400
-
-    tags = []
-    if tags_raw:
+    if token:
         try:
-            tags = parse_tags(tags_raw)
+            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            user = User.query.get(payload.get('user_id'))
+            if user:
+                usuario = user.to_dict()
         except Exception:
-            tags = []
-
-    # If admin, accept directly; otherwise leave as pending
-    if user.role.value == 'ADMIN':
-        status = StatusEnum.ACEITA
-        active = True
-    else:
-        status = StatusEnum.PENDENTE
-        active = False
-
-    # Rate limit: users with role USUARIO can only submit once every 5 minutes
-    try:
-        if user.role.value == 'USUARIO':
-            five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
-            last = News.query.filter(News.author_id == user.id).order_by(News.created_at.desc()).first()
-            if last and last.created_at and last.created_at > five_minutes_ago:
-                # calcula tempo restante em segundos
-                remaining = (last.created_at + timedelta(minutes=5) - datetime.now(timezone.utc)).total_seconds()
-                minutes = int(remaining // 60)
-                seconds = int(remaining % 60)
-                return jsonify({'error': f'Você só pode submeter uma notícia a cada 5 minutos. Tente novamente em {minutes}m{seconds}s.'}), 429
-    except Exception:
-        # Não falhar a submissão por erro na verificação de rate-limit; apenas logar e continuar
-        current_app.logger.exception('Erro ao verificar rate limit de submissão de notícia')
-
-    news = News(title=title, content=content, author_id=user.id, status=status, link=link)
-    if start_date:
-        news.start_date = start_date
-    if end_date:
-        news.end_date = end_date
-    if tags:
-        news.tags = tags
-
-    db.session.add(news)
-    try:
-        db.session.commit()
-    except IntegrityError as e:
-        db.session.rollback()
-        try:
-            if 'news_pkey' in str(e.orig) or 'duplicate key value' in str(e.orig).lower():
-                current_app.logger.warning('IntegrityError on News insert (cadastrar-noticia), attempting to fix news id sequence')
-                seq_fix_sql = "SELECT setval(pg_get_serial_sequence('news','id'), COALESCE((SELECT MAX(id) FROM news), 0))"
-                db.session.execute(text(seq_fix_sql))
-                db.session.commit()
-                # retry insert
-                db.session.add(news)
-                db.session.commit()
-            else:
-                raise
-        except Exception:
-            current_app.logger.exception('Failed to recover from IntegrityError when inserting News (cadastrar-noticia)')
-            db.session.rollback()
-            return jsonify({'error': 'Erro ao salvar notícia (integrity error).'}), 500
-
-    # If news activated, notify
-    if active:
-        from services.notification_service import notify_users_for_news
-        notify_users_for_news(news)
-
-    return jsonify({'message': 'Notícia submetida', 'news': news.to_dict()}), 201
+            usuario = None
+    return render_template('page_feed.html', usuario=usuario)
 
 
 

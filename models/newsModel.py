@@ -25,7 +25,7 @@ class News(db.Model):
     __tablename__ = 'news'
 
     id = db.Column(db.Integer, primary_key=True)
-    image_path = db.Column(db.String(200), nullable=True)
+    image = db.Column(db.String(200), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
@@ -47,6 +47,7 @@ class News(db.Model):
     def to_dict(self) -> dict:
         return {
             'id': self.id,
+            'image': self.image,
             'title': self.title,
             'content': self.content,
             'author_id': self.author_id,

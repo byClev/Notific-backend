@@ -102,7 +102,6 @@ def approve_news(news_id):
             n.tags = parsed
 
     n.status = StatusEnum.ACEITA
-    n.active = True
     db.session.commit()
     # Notificar usuários quando notícia aprovada
     from services.notification_service import notify_users_for_news
@@ -118,7 +117,6 @@ def reject_news(news_id):
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
     n.status = StatusEnum.REJEITADA
-    n.active = False
     db.session.commit()
     return jsonify(n.to_dict()), 200
 
@@ -131,7 +129,6 @@ def set_news_pending(news_id):
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
     n.status = StatusEnum.PENDENTE
-    n.active = False
     db.session.commit()
     return jsonify(n.to_dict()), 200
 
@@ -197,6 +194,9 @@ def delete_news_admin(news_id):
     n = News.query.get(news_id)
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
+    # Delete notifications linked to this news first
+    from models.notificationModel import Notification
+    Notification.query.filter_by(news_id=news_id).delete()
     db.session.delete(n)
     db.session.commit()
     return jsonify({'message': 'Notícia removida'}), 200
