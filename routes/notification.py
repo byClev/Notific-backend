@@ -7,6 +7,15 @@ from routes.decorators import token_required
 
 notification_routes = Blueprint('notification_routes', __name__)
 
+@notification_routes.route('/notifications/unread-count', methods=['GET'])
+@token_required
+def unread_count():
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'success': False, 'error': 'Usuário não autenticado'}), 401
+    count = UserNotification.query.filter_by(user_id=user.id, viewed=False).count()
+    return jsonify({'success': True, 'count': count})
+
 @notification_routes.route('/notifications', methods=['GET'])
 @token_required
 def get_notifications():

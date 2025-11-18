@@ -10,6 +10,9 @@ class Notification(db.Model):
     message = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
+    # relacionamento para News
+    news = db.relationship('News', backref=db.backref('notifications', lazy=True))
+
     # relationship para UserNotification, cascade na ORM
     users = db.relationship(
         'UserNotification',
