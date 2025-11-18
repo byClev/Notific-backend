@@ -18,6 +18,7 @@ def create_app():
     app = Flask(__name__, template_folder='../../html', static_folder='../../static')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config.setdefault('MAX_CONTENT_LENGTH', 10 * 1024 * 1024)  # 10 MB por upload
     app.config['SECRET_KEY'] = os.getenv("SECRET_KEY")
     app.config['MAIL_SERVER'] = 'smtp.gmail.com'
     app.config['MAIL_PORT'] = 587
@@ -40,6 +41,7 @@ def create_app():
     from routes.notification import notification_routes
     from routes.admin_panel import admin_panel
     from routes.admin_roles_panel import admin_roles_panel
+    from routes.image import image_routes
     
     app.register_blueprint(home_routes)
     app.register_blueprint(user_routes)
@@ -48,5 +50,6 @@ def create_app():
     app.register_blueprint(notification_routes)
     app.register_blueprint(admin_panel)
     app.register_blueprint(admin_roles_panel)
+    app.register_blueprint(image_routes)
     
     return app

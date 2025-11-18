@@ -249,22 +249,6 @@ def get_news(news_id):
         pass
     return jsonify(data), 200
 
-
-# Endpoint to upload an image file and return a static path to be saved on a News record
-@news_routes.route('/upload-image', methods=['POST'])
-@token_required
-def upload_image():
-    # Expects multipart/form-data with file field 'file' or 'foto'
-    if 'file' in request.files:
-        f = request.files['file']
-    elif 'foto' in request.files:
-        f = request.files['foto']
-    else:
-        return jsonify({'error': 'No file part'}), 400
-
-    return jsonify({'error': 'Image uploads are disabled in this deployment.'}), 410
-
-
 @news_routes.route('/news/<int:news_id>', methods=['PUT'])
 @token_required
 def update_news(news_id):
