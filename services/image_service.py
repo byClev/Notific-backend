@@ -26,5 +26,5 @@ def save_image(file) -> str:
     path = os.path.join(upload_folder, unique_name)
     file.save(path)
 
-    # Retorna URL completa (http(s)://host/static/img/uploads/...)
-    return url_for('static', filename=f'img/uploads/{unique_name}', _external=True)
+    # Retorna URL relativa (/static/img/uploads/...)
+    return url_for('static', filename=f'img/uploads/{unique_name}')
