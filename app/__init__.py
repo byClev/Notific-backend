@@ -31,9 +31,6 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Note: image columns are not persisted on the News model anymore.
-    # Any enrichment from static JSON is performed at the route level.
-
     from routes.home import home_routes
     from routes.user import user_routes
     from routes.auth import auth_routes
