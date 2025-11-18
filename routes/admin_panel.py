@@ -4,6 +4,7 @@ from routes.decorators import token_required, role_required
 from app import db
 from models.userModel import User
 from models.newsModel import News, StatusEnum, TagEnum
+from sqlalchemy import or_
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -219,10 +220,7 @@ def debug_token():
             info['decode_error'] = str(e)
     return jsonify(info), 200
 
-# Em /routes/admin_panel.py
-from sqlalchemy import or_ # Importe o 'or_' do SQLAlchemy no topo
 
-# ... (resto do seu admin_panel.py) ...
 
 @admin_panel.route('/admin/api/search-user', methods=['GET'])
 @role_required(['ADMIN', 'MODERATOR']) # Apenas admins/mods podem buscar

@@ -37,7 +37,6 @@ class News(db.Model):
     status = db.Column(db.Enum(StatusEnum, name='status_enum'), default=StatusEnum.PENDENTE)
     tags = db.Column(db.ARRAY(db.Enum(TagEnum, name='tag_enum')), nullable=True)
     link = db.Column(db.String(200), nullable=True)
-    # note: image paths handled by static JSON enrichment, not persisted on model
 
     author = db.relationship('User', backref=db.backref('news', lazy=True))
 

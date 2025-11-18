@@ -95,7 +95,7 @@ def create_news():
 
     # Se for admin, publica diretamente
     user = getattr(request, 'user', None)
-    if user and user.role.value == 'ADMIN':
+    if user and (user.role.value == 'ADMIN' or user.role.value == 'MODERADOR'):
         status = StatusEnum.ACEITA
     else:
         status = StatusEnum.PENDENTE
@@ -271,6 +271,8 @@ def update_news(news_id):
     data = request.get_json() or {}
     n.title = data.get('title', n.title)
     n.content = data.get('content', n.content)
+    n.image = data.get('image', n.image)
+
     tags = parse_tags(data.get('tags'))
     if tags:
         n.tags = tags
@@ -332,7 +334,7 @@ def delete_news(news_id):
     user = getattr(request, 'user', None)
     if not user:
         return jsonify({'error': 'Autenticação necessária'}), 401
-    if user.id != n.author_id and user.role.value != 'ADMIN':
+    if user.id != n.author_id and user.role.value == 'USUARIO':
         return jsonify({'error': 'Permissão negada'}), 403
 
     # Delete notifications linked to this news first
