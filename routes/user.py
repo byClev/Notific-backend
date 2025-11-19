@@ -263,3 +263,31 @@ def update_preferences():
     user.notification_preferences = enum_prefs
     db.session.commit()
     return jsonify({'success': True}), 200
+
+@user_routes.route('/user/upload-profile-picture', methods=['POST'])
+@token_required
+def upload_profile_picture():
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'success': False, 'error': 'Usuário não autenticado'}), 401
+
+    # aceita nomes comuns: 'image' ou 'file'
+    file = request.files.get('image') or request.files.get('file')
+
+    if not file:
+        return jsonify({
+            'success': False,
+            'error': 'Nenhum arquivo recebido. Verifique: body=form-data, campo tipo File e nome da chave "image".'
+        }), 400
+
+    try:
+        from services.image_service import save_image
+        url = save_image(file)
+        user.profile_picture = url
+        db.session.commit()
+        return jsonify({'success': True, 'url': url}), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception:
+        current_app.logger.exception('Erro ao salvar foto de perfil')
+        return jsonify({'success': False, 'error': 'Erro interno'}), 500
