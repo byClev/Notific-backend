@@ -5,6 +5,7 @@ from app import db
 from models.userModel import User
 from models.newsModel import News, StatusEnum, TagEnum
 from sqlalchemy import or_
+import os
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -195,6 +196,20 @@ def delete_news_admin(news_id):
     n = News.query.get(news_id)
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
+    
+    # Delete associated image files before deleting the news
+    static_folder = current_app.static_folder
+    if n.image:
+        # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+        # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+        relative_path = n.image.replace('/static/', '', 1)
+        img_path = os.path.join(static_folder, relative_path)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete image file {img_path}: {e}")
+    
     # Delete notifications linked to this news first
     from models.notificationModel import Notification
     Notification.query.filter_by(news_id=news_id).delete()

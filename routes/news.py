@@ -337,6 +337,18 @@ def delete_news(news_id):
     if user.id != n.author_id and user.role.value == 'USUARIO':
         return jsonify({'error': 'Permissão negada'}), 403
 
+    # Delete associated image files before deleting the news
+    if n.image:
+        # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+        # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+        relative_path = n.image.replace('/static/', '', 1)
+        img_path = os.path.join(current_app.static_folder, relative_path)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete image file {img_path}: {e}")
+
     # Delete notifications linked to this news first
     from models.notificationModel import Notification
     Notification.query.filter_by(news_id=news_id).delete()

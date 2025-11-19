@@ -5,6 +5,7 @@ from models.userModel import User, RoleEnum, NotificationPreferenceEnum
 from app import db
 from routes.decorators import token_required, role_required
 from models.newsModel import News
+import os
 
 user_routes = Blueprint('user_routes', __name__)
 
@@ -242,6 +243,19 @@ def deletar_usuario(user_id):
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'Usuário não encontrado'}), 404
+    
+    # Delete profile picture if it exists
+    if user.profile_picture:
+        # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+        # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+        relative_path = user.profile_picture.replace('/static/', '', 1)
+        img_path = os.path.join(current_app.static_folder, relative_path)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete profile picture {img_path}: {e}")
+    
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'Usuário deletado com sucesso'}), 200
@@ -281,6 +295,18 @@ def upload_profile_picture():
         }), 400
 
     try:
+        # Delete old profile picture if it exists
+        if user.profile_picture:
+            # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+            # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+            relative_path = user.profile_picture.replace('/static/', '', 1)
+            old_img_path = os.path.join(current_app.static_folder, relative_path)
+            if os.path.exists(old_img_path):
+                try:
+                    os.remove(old_img_path)
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to delete old profile picture {old_img_path}: {e}")
+
         from services.image_service import save_image
         url = save_image(file)
         user.profile_picture = url
