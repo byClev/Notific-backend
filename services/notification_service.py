@@ -24,7 +24,7 @@ def notify_users_for_news(news: News):
         mapping = {
             'PROJETO': 'PROJETO',
             'EVENTO': 'EVENTO',
-            'VAGA': 'OPORTUNIDADE'
+            'VAGA': 'VAGA'
         }
 
         pref_name = mapping.get(tag_key)
