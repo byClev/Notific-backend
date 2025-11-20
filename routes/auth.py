@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from models.userModel import User
 from app import db, mail
 from flask_mail import Message
-from flask import render_template
+from flask import render_template, url_for
 
 auth_routes = Blueprint('auth_routes', __name__)
 
@@ -88,11 +88,19 @@ def recuperar_senha():
     token = jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
 
     # Monta e envia o e-mail
+    # Gera URL absoluta para o endpoint de redefinição usando url_for(_external=True).
+    # Assim o link respeita o host/porta/dominio atual (ou a configuração de SERVER_NAME).
+    try:
+        reset_url = url_for('auth_routes.redefinir_senha', token=token, _external=True)
+    except Exception:
+        # Fallback simples caso url_for falhe por algum motivo: monta relativa
+        reset_url = f'/redefinir-senha?token={token}'
+
     msg = Message(
         subject='Recuperação de senha',
-        sender=current_app.config['MAIL_USERNAME'],
+        sender=current_app.config.get('MAIL_USERNAME'),
         recipients=[email],
-        body=f'Use este link para redefinir sua senha: http://localhost:5000/redefinir-senha?token={token}'
+        body=f'Use este link para redefinir sua senha: {reset_url}'
     )
     mail.send(msg)
     return jsonify({'message': 'E-mail de recuperação enviado'}), 200

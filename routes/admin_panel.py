@@ -4,6 +4,10 @@ from routes.decorators import token_required, role_required
 from app import db
 from models.userModel import User
 from models.newsModel import News, StatusEnum, TagEnum
+from sqlalchemy import or_
+import os
+from models.notificationModel import Notification, UserNotification
+from services.email_service import send_email
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -107,6 +111,26 @@ def approve_news(news_id):
     # Notificar usuários quando notícia aprovada
     from services.notification_service import notify_users_for_news
     notify_users_for_news(n)
+    # Notificar o autor por e-mail e via in-site notification
+    try:
+        if n.author_id:
+            author = User.query.get(n.author_id)
+            if author:
+                author_msg = f'Sua notícia "{n.title}" foi aceita.'
+                # cria notification + vínculo com o autor
+                notif = Notification(news_id=n.id, message=author_msg)
+                db.session.add(notif)
+                db.session.flush()
+                un = UserNotification(user_id=author.id, notification_id=notif.id)
+                db.session.add(un)
+                db.session.commit()
+                # envia e-mail (não bloqueante na medida do possível)
+                try:
+                    send_email(author.email, 'Sua notícia foi aceita', author_msg)
+                except Exception:
+                    current_app.logger.exception('Falha ao enviar e-mail de aceite para autor %s', author.email)
+    except Exception:
+        current_app.logger.exception('Erro ao notificar autor sobre aceite da notícia %s', n.id)
     return jsonify(n.to_dict()), 200
 
 
@@ -120,6 +144,24 @@ def reject_news(news_id):
     n.status = StatusEnum.REJEITADA
     n.active = False
     db.session.commit()
+    # Notificar o autor por e-mail e via in-site notification
+    try:
+        if n.author_id:
+            author = User.query.get(n.author_id)
+            if author:
+                author_msg = f'Sua notícia "{n.title}" foi rejeitada.'
+                notif = Notification(news_id=n.id, message=author_msg)
+                db.session.add(notif)
+                db.session.flush()
+                un = UserNotification(user_id=author.id, notification_id=notif.id)
+                db.session.add(un)
+                db.session.commit()
+                try:
+                    send_email(author.email, 'Sua notícia foi rejeitada', author_msg)
+                except Exception:
+                    current_app.logger.exception('Falha ao enviar e-mail de rejeição para autor %s', author.email)
+    except Exception:
+        current_app.logger.exception('Erro ao notificar autor sobre rejeição da notícia %s', n.id)
     return jsonify(n.to_dict()), 200
 
 
