@@ -11,7 +11,6 @@ class RoleEnum(Enum):
     ADMIN = 'ADMIN'
     MODERADOR = 'MODERADOR'
     USUARIO = 'USUARIO'
-    PENDENTE_MOD = 'PENDENTE_MOD' # para pendencia de cargo
 
 class NotificationPreferenceEnum(Enum):
     EVENTO = 'EVENTO'

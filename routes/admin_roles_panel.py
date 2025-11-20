@@ -52,17 +52,6 @@ def get_moderador_list():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@admin_roles_panel.route('/admin/api/lista_pendentes', methods=['GET'])
-@role_required('ADMIN')
-@token_required
-def get_pendentes_list():
-    """ (ROTA 4/4 - ANTIGA, RENOMEADA) Retorna usuários com o role PENDENTE_MOD. """
-    try:
-        users = User.query.filter(User.role == RoleEnum.PENDENTE_MOD).all()
-        return jsonify([user.to_dict() for user in users]), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 #
 # --- NOTAS IMPORTANTES ---
 # A Rota de BUSCA (/admin/api/search-user) 
