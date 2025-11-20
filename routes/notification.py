@@ -3,6 +3,7 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from models.notificationModel import UserNotification, Notification
+from models.newsModel import News
 from routes.decorators import token_required
 
 notification_routes = Blueprint('notification_routes', __name__)
@@ -25,7 +26,7 @@ def get_notifications():
     # Paginação
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 10))
-    query = UserNotification.query.filter_by(user_id=user.id).order_by(UserNotification.sent_at.desc())
+    query = db.session.query(UserNotification).join(Notification).join(News).filter(UserNotification.user_id == user.id).order_by(UserNotification.viewed.asc(), News.updated_at.desc())
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     notifications = [
         {

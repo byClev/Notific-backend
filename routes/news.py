@@ -201,7 +201,7 @@ def list_news():
     # Paginação
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 10))
-    pagination = q.order_by(News.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = q.order_by(News.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     items = [n.to_dict() for n in pagination.items]
     # Tenta enriquecer os itens com imagens do JSON estático, se presentes
     # (sem alteração no esquema do BD)
