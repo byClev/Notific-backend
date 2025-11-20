@@ -38,10 +38,18 @@ def notify_users_for_news(news: News):
 
         users = User.query.filter(User.notification_preferences.any(pref_enum)).all()
         for user in users:
+            # Verifica se já existe notificação para esse usuário e notícia
+            exists = UserNotification.query.join(Notification).filter(
+                UserNotification.user_id == user.id,
+                Notification.news_id == news.id
+            ).first()
+            if exists:
+                continue  # já notificou esse usuário para essa notícia
+
             message = f'Nova notícia: {news.title} ({tag.value})'
             notification = Notification(news_id=news.id, message=message)
             db.session.add(notification)
-            db.session.flush()  # para obter id
+            db.session.flush()
             user_notification = UserNotification(user_id=user.id, notification_id=notification.id)
             db.session.add(user_notification)
             recipients.append((user.email, message))

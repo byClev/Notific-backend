@@ -6,8 +6,6 @@ from models.userModel import User
 from models.newsModel import News, StatusEnum, TagEnum
 from sqlalchemy import or_
 import os
-from models.notificationModel import Notification, UserNotification
-from services.email_service import send_email
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -106,7 +104,6 @@ def approve_news(news_id):
             n.tags = parsed
 
     n.status = StatusEnum.ACEITA
-    n.active = True
     db.session.commit()
     # Notificar usuários quando notícia aprovada
     from services.notification_service import notify_users_for_news
@@ -142,7 +139,6 @@ def reject_news(news_id):
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
     n.status = StatusEnum.REJEITADA
-    n.active = False
     db.session.commit()
     # Notificar o autor por e-mail e via in-site notification
     try:
@@ -173,7 +169,6 @@ def set_news_pending(news_id):
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
     n.status = StatusEnum.PENDENTE
-    n.active = False
     db.session.commit()
     return jsonify(n.to_dict()), 200
 
@@ -239,6 +234,23 @@ def delete_news_admin(news_id):
     n = News.query.get(news_id)
     if not n:
         return jsonify({'error': 'Notícia não encontrada'}), 404
+    
+    # Delete associated image files before deleting the news
+    static_folder = current_app.static_folder
+    if n.image:
+        # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+        # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+        relative_path = n.image.replace('/static/', '', 1)
+        img_path = os.path.join(static_folder, relative_path)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete image file {img_path}: {e}")
+    
+    # Delete notifications linked to this news first
+    from models.notificationModel import Notification
+    Notification.query.filter_by(news_id=news_id).delete()
     db.session.delete(n)
     db.session.commit()
     return jsonify({'message': 'Notícia removida'}), 200
@@ -261,10 +273,7 @@ def debug_token():
             info['decode_error'] = str(e)
     return jsonify(info), 200
 
-# Em /routes/admin_panel.py
-from sqlalchemy import or_ # Importe o 'or_' do SQLAlchemy no topo
 
-# ... (resto do seu admin_panel.py) ...
 
 @admin_panel.route('/admin/api/search-user', methods=['GET'])
 @role_required(['ADMIN', 'MODERATOR']) # Apenas admins/mods podem buscar

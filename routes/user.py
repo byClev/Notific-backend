@@ -5,6 +5,7 @@ from models.userModel import User, RoleEnum, NotificationPreferenceEnum
 from app import db
 from routes.decorators import token_required, role_required
 from models.newsModel import News
+import os
 
 user_routes = Blueprint('user_routes', __name__)
 
@@ -242,6 +243,19 @@ def deletar_usuario(user_id):
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'Usuário não encontrado'}), 404
+    
+    # Delete profile picture if it exists
+    if user.profile_picture:
+        # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+        # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+        relative_path = user.profile_picture.replace('/static/', '', 1)
+        img_path = os.path.join(current_app.static_folder, relative_path)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete profile picture {img_path}: {e}")
+    
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'Usuário deletado com sucesso'}), 200
@@ -263,3 +277,43 @@ def update_preferences():
     user.notification_preferences = enum_prefs
     db.session.commit()
     return jsonify({'success': True}), 200
+
+@user_routes.route('/user/upload-profile-picture', methods=['POST'])
+@token_required
+def upload_profile_picture():
+    user = getattr(request, 'user', None)
+    if not user:
+        return jsonify({'success': False, 'error': 'Usuário não autenticado'}), 401
+
+    # aceita nomes comuns: 'image' ou 'file'
+    file = request.files.get('image') or request.files.get('file')
+
+    if not file:
+        return jsonify({
+            'success': False,
+            'error': 'Nenhum arquivo recebido. Verifique: body=form-data, campo tipo File e nome da chave "image".'
+        }), 400
+
+    try:
+        # Delete old profile picture if it exists
+        if user.profile_picture:
+            # Extract filename from URL like '/static/img/uploads/uuid_filename.jpg'
+            # Remove '/static/' prefix to get 'img/uploads/uuid_filename.jpg'
+            relative_path = user.profile_picture.replace('/static/', '', 1)
+            old_img_path = os.path.join(current_app.static_folder, relative_path)
+            if os.path.exists(old_img_path):
+                try:
+                    os.remove(old_img_path)
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to delete old profile picture {old_img_path}: {e}")
+
+        from services.image_service import save_image
+        url = save_image(file)
+        user.profile_picture = url
+        db.session.commit()
+        return jsonify({'success': True, 'url': url}), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception:
+        current_app.logger.exception('Erro ao salvar foto de perfil')
+        return jsonify({'success': False, 'error': 'Erro interno'}), 500

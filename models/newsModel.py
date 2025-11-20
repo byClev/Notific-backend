@@ -25,6 +25,7 @@ class News(db.Model):
     __tablename__ = 'news'
 
     id = db.Column(db.Integer, primary_key=True)
+    image = db.Column(db.String(200), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
@@ -36,7 +37,6 @@ class News(db.Model):
     status = db.Column(db.Enum(StatusEnum, name='status_enum'), default=StatusEnum.PENDENTE)
     tags = db.Column(db.ARRAY(db.Enum(TagEnum, name='tag_enum')), nullable=True)
     link = db.Column(db.String(200), nullable=True)
-    # note: image paths handled by static JSON enrichment, not persisted on model
 
     author = db.relationship('User', backref=db.backref('news', lazy=True))
 
@@ -46,6 +46,7 @@ class News(db.Model):
     def to_dict(self) -> dict:
         return {
             'id': self.id,
+            'image': self.image,
             'title': self.title,
             'content': self.content,
             'author_id': self.author_id,

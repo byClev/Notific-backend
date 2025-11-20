@@ -29,7 +29,6 @@ class User(db.Model):
     role = db.Column(db.Enum(RoleEnum, name='role_enum'), nullable=False, default=RoleEnum.USUARIO)
     notification_preferences = db.Column(db.ARRAY(db.Enum(NotificationPreferenceEnum, name='notification_preference_enum')), nullable=True)
     profile_picture = db.Column(db.String(200), nullable=True)
-    # Use callables for defaults so timestamps are evaluated at insert/update time
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
