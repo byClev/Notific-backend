@@ -39,7 +39,6 @@ def notify_users_for_news(news: News):
 
         users = User.query.filter(User.notification_preferences.any(pref_enum)).all()
         for user in users:
-            # Exclui o autor da notícia para evitar notificações próprias
             if user.id == news.author_id:
                 continue
             # Verifica se já existe notificação para esse usuário e notícia

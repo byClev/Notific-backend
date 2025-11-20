@@ -91,6 +91,12 @@ def create_news():
     if not title or not content:
         return jsonify({'error': 'title e content são obrigatórios'}), 400
 
+    if len(title) > 85:
+        return jsonify({'error': 'title deve ter no máximo 85 caracteres'}), 400
+
+    if len(content) > 1200:
+        return jsonify({'error': 'content deve ter no máximo 1200 caracteres'}), 400
+
     tags = parse_tags(tags_raw)
 
     # Se for admin, publica diretamente
@@ -272,6 +278,12 @@ def update_news(news_id):
     n.title = data.get('title', n.title)
     n.content = data.get('content', n.content)
     n.image = data.get('image', n.image)
+
+    if len(n.title) > 85:
+        return jsonify({'error': 'title deve ter no máximo 85 caracteres'}), 400
+
+    if len(n.content) > 1200:
+        return jsonify({'error': 'content deve ter no máximo 1200 caracteres'}), 400
 
     tags = parse_tags(data.get('tags'))
     if tags:
