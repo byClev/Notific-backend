@@ -8,6 +8,7 @@ from app import db
 import threading
 from flask import current_app
 from services.email_service import send_email
+from flask import url_for
 
 def notify_users_for_news(news: News):
     if not news.tags:
@@ -52,7 +53,10 @@ def notify_users_for_news(news: News):
             db.session.flush()
             user_notification = UserNotification(user_id=user.id, notification_id=notification.id)
             db.session.add(user_notification)
-            recipients.append((user.email, message))
+            # Gerar link para a notícia
+            news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={news.id}'
+            html_body = f'<p>Nova notícia: <a href="{news_link}">{news.title}</a> ({tag.value})</p>'
+            recipients.append((user.email, message, html_body))
 
     # commit das notificações e relacionamentos primeiro
     if recipients:
@@ -67,9 +71,9 @@ def notify_users_for_news(news: News):
 
         def _send_all_emails(recipients_list, app_ctx):
             with app_ctx.app_context():
-                for email, msg in recipients_list:
+                for email, msg, html in recipients_list:
                     try:
-                        send_email(email, 'Nova Notificação', msg)
+                        send_email(email, 'Nova Notificação', msg, html=html)
                     except Exception:
                         app_ctx.logger.exception("Falha ao enviar e-mail para %s", email)
 
