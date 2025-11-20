@@ -223,9 +223,48 @@ def update_news_tags(news_id):
         except Exception:
             parsed = []
 
+    old_tags = set(n.tags) if n.tags else set()
+    new_tags = set(parsed) if parsed else set()
+    added_tags = new_tags - old_tags
+
     if parsed:
         n.tags = parsed
         db.session.commit()
+
+    # Enviar notificações para tags adicionadas
+    if added_tags:
+        from models.notificationModel import Notification, UserNotification
+        from sqlalchemy.dialects.postgresql import array
+        from sqlalchemy import cast
+        for tag in added_tags:
+            tag_value = tag.value
+            # Usuários com preferência por essa tag e que não foram notificados ainda para esta notícia
+            users_to_notify = User.query.filter(
+                User.notification_preferences.op('@>')(cast(array([tag_value]), User.notification_preferences.type)) | User.notification_preferences.op('@>')(cast(array(['TODOS']), User.notification_preferences.type))
+            ).filter(
+                ~User.id.in_(
+                    db.session.query(UserNotification.user_id).join(Notification).filter(Notification.news_id == news_id)
+                )
+            ).filter(User.id != n.author_id).all()  # Excluir autor
+
+            for user in users_to_notify:
+                try:
+                    msg = f'Nova notícia com tag {tag_value}: "{n.title}"'
+                    notif = Notification(news_id=n.id, message=msg)
+                    db.session.add(notif)
+                    db.session.flush()
+                    un = UserNotification(user_id=user.id, notification_id=notif.id)
+                    db.session.add(un)
+                    db.session.commit()
+                    # Enviar e-mail
+                    try:
+                        from services.email_service import send_email
+                        send_email(user.email, f'Notificação: {tag_value}', msg)
+                    except Exception:
+                        current_app.logger.exception('Falha ao enviar e-mail para %s', user.email)
+                except Exception:
+                    current_app.logger.exception('Erro ao notificar usuário %s para tag %s', user.id, tag_value)
+
     return jsonify(n.to_dict()), 200
 
 
