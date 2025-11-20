@@ -6,6 +6,8 @@ from models.userModel import User
 from models.newsModel import News, StatusEnum, TagEnum
 from sqlalchemy import or_
 import os
+from models.notificationModel import Notification, UserNotification
+from services.email_service import send_email
 
 admin_panel = Blueprint('admin_panel', __name__)
 
