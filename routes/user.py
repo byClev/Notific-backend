@@ -32,12 +32,14 @@ def criar_usuario():
 
 # READ ALL
 @user_routes.route('/user', methods=['GET'])
+@role_required(['ADMIN', 'MODERATOR'])
 def listar_usuarios():
     users = User.query.all()
     return jsonify([u.to_dict() for u in users]), 200
 
 # READ ONE
 @user_routes.route('/user/<int:user_id>', methods=['GET'])
+@role_required(['ADMIN', 'MODERATOR'])
 def obter_usuario(user_id):
     user = User.query.get(user_id)
     if not user:
