@@ -33,7 +33,7 @@ Write-Info "Ativando virtualenv"
 $envPath = "src/backend/.env"
 if (-not (Test-Path $envPath)) {
     Write-Info "Arquivo .env não encontrado. Vou criar um .env de desenvolvimento padrão (você poderá editar depois)."
-    $default = @"
+    $default = @'
 # Flask settings
 FLASK_ENV=development
 FLASK_DEBUG=True
@@ -46,16 +46,17 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=NotificDB
 
-# URL de conexão completa (opcional)
+# URL de conexão completa (opcional) - substitua os valores abaixo conforme necessário
 DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
 
 # Email settings (ajuste se necessário)
-MAIL_SERVER=ssmtp.gmail.com
+# NOTE: use seu servidor SMTP (ex: smtp.gmail.com). Não deixe credenciais reais no repositório.
+MAIL_SERVER=smtp.gmail.com
 MAIL_PORT=587
 MAIL_USE_TLS=True
 MAIL_USERNAME=NotificUFAL@gmail.com
-MAIL_PASSWORD=senha_teste
-"@
+MAIL_PASSWORD=Senha_Pedir_para_o_Dev
+'@
     $default | Out-File -FilePath $envPath -Encoding UTF8
     Write-Ok "Arquivo .env criado em $envPath (revise os valores sensíveis)."
 } else {
