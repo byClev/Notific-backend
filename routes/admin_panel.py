@@ -139,7 +139,17 @@ def approve_news(news_id):
 def reject_news(news_id):
     n = News.query.get(news_id)
     if not n:
-        return jsonify({'error': 'Notícia não encontrada'}), 404
+        return jsonify({'error': 'Notícia não encontrada'}), 404 
+    if n.image:
+        relative_path = n.image.replace('/static/', '', 1)
+        img_path = os.path.join(current_app.static_folder, relative_path)
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+                current_app.logger.info(f'Imagem deletada para notícia rejeitada: {img_path}')
+            except Exception as e:
+                current_app.logger.warning(f'Falha ao deletar imagem da notícia rejeitada {img_path}: {e}')
+    
     n.status = StatusEnum.REJEITADA
     db.session.commit()
     # Notificar o autor por e-mail e via in-site notification
