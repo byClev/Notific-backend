@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, render_template, current_app, url_for
+from flask import Blueprint, request, jsonify, render_template, current_app
 import jwt
 from routes.decorators import token_required, role_required
 from app import db
@@ -7,8 +7,6 @@ from models.newsModel import News, StatusEnum, TagEnum
 from sqlalchemy import or_
 import os
 from models.notificationModel import Notification, UserNotification
-from services.email_service import send_email
-import threading
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -109,34 +107,9 @@ def approve_news(news_id):
     n.status = StatusEnum.ACEITA
     db.session.commit()
     # Notificar usuários quando notícia aprovada
-    from services.notification_service import notify_users_for_news
+    from services.notification_service import notify_users_for_news, notify_author_approval
     notify_users_for_news(n)
-    # Notificar o autor por e-mail e via in-site notification
-    try:
-        if n.author_id:
-            author = User.query.get(n.author_id)
-            if author:
-                author_msg = f'Sua notícia "{n.title}" foi aceita.'
-                # cria notification + vínculo com o autor
-                notif = Notification(news_id=n.id, message=author_msg)
-                db.session.add(notif)
-                db.session.flush()
-                un = UserNotification(user_id=author.id, notification_id=notif.id)
-                db.session.add(un)
-                db.session.commit()
-                # envia e-mail (não bloqueante)
-                news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={n.id}'
-                html_body = f'<p>Sua notícia <a href="{news_link}">{n.title}</a> foi aceita.</p>'
-                app_ctx = current_app._get_current_object()
-                def _send_email():
-                    with app_ctx.app_context():
-                        try:
-                            send_email(author.email, 'Sua notícia foi aceita', author_msg, html=html_body)
-                        except Exception:
-                            app_ctx.logger.exception('Falha ao enviar e-mail de aceite para autor %s', author.email)
-                threading.Thread(target=_send_email, daemon=True).start()
-    except Exception:
-        current_app.logger.exception('Erro ao notificar autor sobre aceite da notícia %s', n.id)
+    notify_author_approval(n)
     return jsonify(n.to_dict()), 200
 
 
@@ -160,30 +133,8 @@ def reject_news(news_id):
     n.status = StatusEnum.REJEITADA
     db.session.commit()
     # Notificar o autor por e-mail e via in-site notification
-    try:
-        if n.author_id:
-            author = User.query.get(n.author_id)
-            if author:
-                author_msg = f'Sua notícia "{n.title}" foi rejeitada.'
-                notif = Notification(news_id=n.id, message=author_msg)
-                db.session.add(notif)
-                db.session.flush()
-                un = UserNotification(user_id=author.id, notification_id=notif.id)
-                db.session.add(un)
-                db.session.commit()
-                # envia e-mail (não bloqueante)
-                news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={n.id}'
-                html_body = f'<p>Sua notícia <a href="{news_link}">{n.title}</a> foi rejeitada.</p>'
-                app_ctx = current_app._get_current_object()
-                def _send_email():
-                    with app_ctx.app_context():
-                        try:
-                            send_email(author.email, 'Sua notícia foi rejeitada', author_msg, html=html_body)
-                        except Exception:
-                            app_ctx.logger.exception('Falha ao enviar e-mail de rejeição para autor %s', author.email)
-                threading.Thread(target=_send_email, daemon=True).start()
-    except Exception:
-        current_app.logger.exception('Erro ao notificar autor sobre rejeição da notícia %s', n.id)
+    from services.notification_service import notify_author_rejection
+    notify_author_rejection(n)
     return jsonify(n.to_dict()), 200
 
 
@@ -257,42 +208,8 @@ def update_news_tags(news_id):
 
     # Enviar notificações para tags adicionadas
     if added_tags:
-        news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={n.id}'
-        from models.notificationModel import Notification, UserNotification
-        from sqlalchemy.dialects.postgresql import array
-        from sqlalchemy import cast
-        for tag in added_tags:
-            tag_value = tag.value
-            # Usuários com preferência por essa tag e que não foram notificados ainda para esta notícia
-            users_to_notify = User.query.filter(
-                User.notification_preferences.op('@>')(cast(array([tag_value]), User.notification_preferences.type)) | User.notification_preferences.op('@>')(cast(array(['TODOS']), User.notification_preferences.type))
-            ).filter(
-                ~User.id.in_(
-                    db.session.query(UserNotification.user_id).join(Notification).filter(Notification.news_id == news_id)
-                )
-            ).filter(User.id != n.author_id).all()  # Excluir autor
-
-            for user in users_to_notify:
-                try:
-                    msg = f'Nova notícia com tag {tag_value}: "{n.title}"'
-                    html_body = f'<p>Nova notícia com tag {tag_value}: <a href="{news_link}">{n.title}</a></p>'
-                    notif = Notification(news_id=n.id, message=msg)
-                    db.session.add(notif)
-                    db.session.flush()
-                    un = UserNotification(user_id=user.id, notification_id=notif.id)
-                    db.session.add(un)
-                    db.session.commit()
-                    # Enviar e-mail (não bloqueante)
-                    app_ctx = current_app._get_current_object()
-                    def _send_email():
-                        with app_ctx.app_context():
-                            try:
-                                send_email(user.email, f'Notificação: {tag_value}', msg, html=html_body)
-                            except Exception:
-                                app_ctx.logger.exception('Falha ao enviar e-mail para %s', user.email)
-                    threading.Thread(target=_send_email, daemon=True).start()
-                except Exception:
-                    current_app.logger.exception('Erro ao notificar usuário %s para tag %s', user.id, tag_value)
+        from services.notification_service import notify_users_for_added_tags
+        notify_users_for_added_tags(n, added_tags)
 
     return jsonify(n.to_dict()), 200
 

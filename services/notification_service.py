@@ -88,3 +88,89 @@ def get_user_notifications(user_id: int):
     notifications = UserNotification.query.filter_by(user_id=user_id).order_by(UserNotification.sent_at.desc()).limit(10).all()
     unread_count = UserNotification.query.filter_by(user_id=user_id, viewed=False).count()
     return notifications, unread_count
+
+def notify_author_approval(news: News):
+    if not news.author_id:
+        return
+    author = User.query.get(news.author_id)
+    if not author:
+        return
+    author_msg = f'Sua notícia "{news.title}" foi aceita.'
+    notif = Notification(news_id=news.id, message=author_msg)
+    db.session.add(notif)
+    db.session.flush()
+    un = UserNotification(user_id=author.id, notification_id=notif.id)
+    db.session.add(un)
+    db.session.commit()
+    # send email
+    news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={news.id}'
+    html_body = f'<p>Sua notícia <a href="{news_link}">{news.title}</a> foi aceita.</p>'
+    app = current_app._get_current_object()
+    def _send_email():
+        with app.app_context():
+            try:
+                send_email(author.email, 'Sua notícia foi aceita', author_msg, html=html_body)
+            except Exception:
+                app.logger.exception('Falha ao enviar e-mail de aceite para autor %s', author.email)
+    threading.Thread(target=_send_email, daemon=True).start()
+
+def notify_author_rejection(news: News):
+    if not news.author_id:
+        return
+    author = User.query.get(news.author_id)
+    if not author:
+        return
+    author_msg = f'Sua notícia "{news.title}" foi rejeitada.'
+    notif = Notification(news_id=news.id, message=author_msg)
+    db.session.add(notif)
+    db.session.flush()
+    un = UserNotification(user_id=author.id, notification_id=notif.id)
+    db.session.add(un)
+    db.session.commit()
+    # send email
+    news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={news.id}'
+    html_body = f'<p>Sua notícia <a href="{news_link}">{news.title}</a> foi rejeitada.</p>'
+    app = current_app._get_current_object()
+    def _send_email():
+        with app.app_context():
+            try:
+                send_email(author.email, 'Sua notícia foi rejeitada', author_msg, html=html_body)
+            except Exception:
+                app.logger.exception('Falha ao enviar e-mail de rejeição para autor %s', author.email)
+    threading.Thread(target=_send_email, daemon=True).start()
+
+def notify_users_for_added_tags(news: News, added_tags):
+    if not added_tags:
+        return
+    news_link = url_for('news_routes.render_news_template', _external=True) + f'?id={news.id}'
+    from sqlalchemy.dialects.postgresql import array
+    from sqlalchemy import cast
+    for tag in added_tags:
+        tag_value = tag.value
+        users_to_notify = User.query.filter(
+            User.notification_preferences.op('@>')(cast(array([tag_value]), User.notification_preferences.type)) | User.notification_preferences.op('@>')(cast(array(['TODOS']), User.notification_preferences.type))
+        ).filter(
+            ~User.id.in_(
+                db.session.query(UserNotification.user_id).join(Notification).filter(Notification.news_id == news.id)
+            )
+        ).filter(User.id != news.author_id).all()
+        for user in users_to_notify:
+            try:
+                msg = f'Nova notícia com tag {tag_value}: "{news.title}"'
+                html_body = f'<p>Nova notícia com tag {tag_value}: <a href="{news_link}">{news.title}</a></p>'
+                notif = Notification(news_id=news.id, message=msg)
+                db.session.add(notif)
+                db.session.flush()
+                un = UserNotification(user_id=user.id, notification_id=notif.id)
+                db.session.add(un)
+                db.session.commit()
+                app = current_app._get_current_object()
+                def _send_email():
+                    with app.app_context():
+                        try:
+                            send_email(user.email, f'Notificação: {tag_value}', msg, html=html_body)
+                        except Exception:
+                            app.logger.exception('Falha ao enviar e-mail para %s', user.email)
+                threading.Thread(target=_send_email, daemon=True).start()
+            except Exception:
+                current_app.logger.exception('Erro ao notificar usuário %s para tag %s', user.id, tag_value)
