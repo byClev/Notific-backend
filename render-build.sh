@@ -3,15 +3,13 @@ set -euo pipefail
 
 echo "==> Starting render build script"
 
-# Move to backend directory where requirements.txt and app code live
-cd src/backend
-
+# We're already running from `src/backend` (Render's Root Directory).
 echo "==> Upgrading pip and installing requirements"
 python -m pip install --upgrade pip
 if [ -f requirements.txt ]; then
   pip install -r requirements.txt
 else
-  echo "No requirements.txt found in src/backend; skipping pip install"
+  echo "No requirements.txt found in current directory; skipping pip install"
 fi
 
 # Optional: run database migrations if you use Alembic and DB is available
