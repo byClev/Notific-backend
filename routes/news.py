@@ -63,6 +63,50 @@ def parse_datetime(dt_raw):
     raise ValueError(f"Unsupported datetime value: {dt_raw}")
 
 
+def get_seconds_until_rate_limit_expires(user_id, minutes: int = 5) -> int:
+    """Retorna o número de segundos até que o usuário possa submeter novamente.
+    
+    Retorna 0 se o usuário pode submeter agora.
+    Permite no máximo 3 submissões por dia.
+    """
+    try:
+        from sqlalchemy import func
+        
+        # Busca o timestamp atual do banco
+        db_now = db.session.query(func.now()).scalar()
+        
+        # Normaliza para começar no início do dia (00:00:00)
+        if db_now.tzinfo is None or db_now.tzinfo.utcoffset(db_now) is None:
+            today_start = db_now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        else:
+            # Converte para timezone aware se necessário
+            db_now_aware = db_now if db_now.tzinfo else db_now.replace(tzinfo=timezone.utc)
+            today_start = db_now_aware.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Conta quantas notícias o usuário submeteu hoje
+        count_today = News.query.filter(
+            News.author_id == user_id,
+            News.created_at >= today_start
+        ).count()
+        
+        current_app.logger.info(f'Rate limit check: user {user_id}, submissions today: {count_today}/3')
+        
+        # Permite no máximo 3 submissões por dia
+        if count_today > 3:
+            # Calcula quantos segundos faltam até a meia-noite (início do próximo dia)
+            tomorrow_start = today_start + timedelta(days=1)
+            if db_now.tzinfo is None or db_now.tzinfo.utcoffset(db_now) is None:
+                db_now = db_now.replace(tzinfo=timezone.utc)
+            remaining = (tomorrow_start - db_now).total_seconds()
+            return max(0, int(remaining))
+        
+        return 0
+    except Exception:
+        current_app.logger.exception('Erro ao verificar rate limit')
+        # Falha aberta: não bloqueia em caso de erro
+        return 0
+
+
 @news_routes.route('/news', methods=['POST'])
 @token_required
 def create_news():
@@ -106,20 +150,14 @@ def create_news():
     else:
         status = StatusEnum.PENDENTE
 
-    # Rate limit: users with role USUARIO can only submit once every 5 minutes
-    try:
-        if user and user.role.value == 'USUARIO':
-            five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
-            last = News.query.filter(News.author_id == user.id).order_by(News.created_at.desc()).first()
-            if last and last.created_at and last.created_at > five_minutes_ago:
-                # calcula tempo restante em segundos
-                remaining = (last.created_at + timedelta(minutes=5) - datetime.now(timezone.utc)).total_seconds()
-                minutes = int(remaining // 60)
-                seconds = int(remaining % 60)
-                return jsonify({'error': f'Você só pode submeter uma notícia a cada 5 minutos. Tente novamente em {minutes}m{seconds}s.'}), 429
-    except Exception:
-        # Não falhar a submissão por erro na verificação de rate-limit; apenas logar e continuar
-        current_app.logger.exception('Erro ao verificar rate limit de submissão de notícia')
+    # Rate limit: users with role USUARIO can only submit 3 times per day
+    if user and user.role.value == 'USUARIO':
+        remaining = get_seconds_until_rate_limit_expires(user.id)
+        if remaining > 0:
+            hours = int(remaining // 3600)
+            minutes = int((remaining % 3600) // 60)
+            seconds = int(remaining % 60)
+            return jsonify({'error': f'Você atingiu o limite de 3 notícias por dia. Tente novamente em {hours}h{minutes}m{seconds}s.'}), 429
 
     # analisa as datas se fornecidas
     try:
@@ -146,6 +184,8 @@ def create_news():
     db.session.add(news)
     try:
         db.session.commit()
+        # Força a persistência imediata para garantir que próximas requisições vejam esta notícia
+        db.session.flush()
     except IntegrityError as e:
         # Handle possible sequence mismatch (e.g., after seeding static JSON)
         db.session.rollback()
@@ -159,6 +199,7 @@ def create_news():
                 # retry insert
                 db.session.add(news)
                 db.session.commit()
+                db.session.flush()
             else:
                 raise
         except Exception:
