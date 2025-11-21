@@ -7,6 +7,9 @@ import os
 from flask_migrate import Migrate
 from flask_mail import Mail
 from sqlalchemy import text
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import atexit
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -48,5 +51,11 @@ def create_app():
     app.register_blueprint(admin_panel)
     app.register_blueprint(admin_roles_panel)
     app.register_blueprint(image_routes)
+    
+    from services.cleanup_service import cleanup_rejected_news
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=cleanup_rejected_news, trigger=IntervalTrigger(days=7), id='cleanup_rejected_news', name='Cleanup rejected news')
+    scheduler.start()
+    atexit.register(lambda: scheduler.shutdown())
     
     return app

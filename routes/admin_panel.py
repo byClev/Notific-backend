@@ -296,3 +296,16 @@ def search_user_api():
 
     # Se encontrou, retorna o JSON do usuário
     return jsonify(user.to_dict()), 200
+
+
+@admin_panel.route('/admin/cleanup', methods=['POST'])
+@role_required('ADMIN')
+@token_required
+def manual_cleanup():
+    from services.cleanup_service import cleanup_rejected_news
+    try:
+        count = cleanup_rejected_news()
+        return jsonify({'message': f'Limpeza manual executada com sucesso. {count} notícias deletadas.'}), 200
+    except Exception as e:
+        current_app.logger.exception('Erro na limpeza manual')
+        return jsonify({'error': 'Erro na limpeza manual'}), 500

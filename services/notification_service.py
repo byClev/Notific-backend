@@ -1,7 +1,7 @@
 # services/notification_service.py
 
 from models.userModel import User, NotificationPreferenceEnum
-from models.newsModel import News, TagEnum
+from models.newsModel import News, TagEnum, StatusEnum
 from enum import Enum as PyEnum
 from models.notificationModel import Notification, UserNotification
 from app import db
