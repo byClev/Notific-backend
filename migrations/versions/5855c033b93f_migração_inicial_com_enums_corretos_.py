@@ -34,6 +34,7 @@ def upgrade():
     )
     op.create_table('news',
     sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('image', sa.String(length=200), nullable=True),
     sa.Column('title', sa.String(length=200), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
     sa.Column('author_id', sa.Integer(), nullable=True),

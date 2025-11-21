@@ -4,7 +4,7 @@ migração inicial (Alembic). Use com cuidado — faça backup se necessário.
 
 Como usar (PowerShell, no root do repo):
 & .\.venv\Scripts\Activate.ps1
-python src/backend/reset_db.py
+python src/backend/create_db.py
 
 O script:
 - lê src/backend/.env para obter DB_USER/DB_PASSWORD/DB_HOST/DB_PORT/DB_NAME
@@ -113,7 +113,12 @@ def ensure_user_favorites_table(database_url):
     """
     print('Verificando existência da tabela user_favorites...')
     try:
-        conn = psycopg2.connect(database_url)
+        parsed = parse_database_url(database_url)
+        if parsed:
+            user, password, host, port, dbname = parsed
+            conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+        else:
+            conn = psycopg2.connect(database_url)
         conn.autocommit = True
         cur = conn.cursor()
         create_sql = '''
@@ -148,7 +153,12 @@ def ensure_admin_user(database_url, username='notific', email='Notificufal@gmail
     print('Verificando existência do usuário administrador...')
     conn = None
     try:
-        conn = psycopg2.connect(database_url)
+        parsed = parse_database_url(database_url)
+        if parsed:
+            user, pwd, host, port, dbname = parsed
+            conn = psycopg2.connect(dbname=dbname, user=user, password=pwd, host=host, port=port)
+        else:
+            conn = psycopg2.connect(database_url)
         conn.autocommit = True
         cur = conn.cursor()
 
