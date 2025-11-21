@@ -8,6 +8,7 @@ from models.userModel import User
 from app import db, mail
 from flask_mail import Message
 from flask import render_template, url_for
+import threading
 
 auth_routes = Blueprint('auth_routes', __name__)
 
@@ -102,7 +103,15 @@ def recuperar_senha():
         recipients=[email],
         body=f'Use este link para redefinir sua senha: {reset_url}'
     )
-    mail.send(msg)
+    # Envia e-mail de forma assíncrona
+    app_ctx = current_app._get_current_object()
+    def _send_email():
+        with app_ctx.app_context():
+            try:
+                mail.send(msg)
+            except Exception:
+                current_app.logger.exception('Falha ao enviar e-mail de recuperação para %s', email)
+    threading.Thread(target=_send_email, daemon=True).start()
     return jsonify({'message': 'E-mail de recuperação enviado'}), 200
 
 @auth_routes.route('/redefinir-senha', methods=['GET', 'POST'])
