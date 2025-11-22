@@ -93,16 +93,31 @@ def drop_and_create_db(user, password, host, port, dbname):
 
 
 def run_alembic_upgrade(migrations_ini_path, database_url):
-    """Roda alembic upgrade head apontando para a URL do DB."""
-    print('Aplicando migrations (alembic upgrade head)...')
-    cfg = Config(migrations_ini_path)
-    # garante que usamos a URL correta (sobrescreve a do ini, se houver)
-    cfg.set_main_option('sqlalchemy.url', database_url)
-    # garante que o alembic saiba onde estão os scripts (usa caminho absoluto)
-    migrations_dir = os.path.dirname(migrations_ini_path)
-    cfg.set_main_option('script_location', migrations_dir)
-    command.upgrade(cfg, 'head')
-    print('Migrations aplicadas com sucesso.')
+    """Roda alembic upgrade head apontando para a URL do DB.
+
+    This uses the Flask CLI (python -m flask db upgrade) in a subprocess so
+    the Flask application context is created and Flask-Migrate is available
+    (avoids RuntimeError: Working outside of application context).
+    """
+    print('Aplicando migrations via Flask CLI (flask db upgrade)...')
+    import subprocess
+
+    # prepare environment for subprocess: ensure DATABASE_URL and FLASK_APP
+    env = os.environ.copy()
+    env['DATABASE_URL'] = database_url
+    # when running from src/backend, wsgi.py is the app module
+    env.setdefault('FLASK_APP', 'wsgi.py')
+
+    # Run flask from the src/backend folder (where wsgi.py lives). The
+    # migrations ini is in src/backend/migrations; we want to run flask from
+    # the backend root so application import paths work.
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(migrations_ini_path), '..'))
+    try:
+        subprocess.run([sys.executable, '-m', 'flask', 'db', 'upgrade'], check=True, cwd=backend_dir, env=env)
+        print('Migrations aplicadas com sucesso via Flask CLI.')
+    except subprocess.CalledProcessError as e:
+        print('Erro ao executar "flask db upgrade" via subprocess:', e)
+        raise
 
 
 def ensure_user_favorites_table(database_url):
